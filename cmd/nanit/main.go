@@ -38,6 +38,9 @@ func main() {
 			RefreshToken: utils.EnvVarStr("NANIT_REFRESH_TOKEN", ""),
 		},
 		SessionFile: utils.EnvVarStr("NANIT_SESSION_FILE", "/data/session.json"),
+
+		// Opt-in protocol experiment endpoints; off unless explicitly requested
+		DebugControl: utils.EnvVarBool("NANIT_DEBUG_CONTROL", false),
 		DataDirectories: func() app.DataDirectories {
 			dirs, err := ensureDataDirectories()
 			if err != nil {
@@ -96,6 +99,9 @@ func main() {
 			Username:    utils.EnvVarStr("NANIT_MQTT_USERNAME", ""),
 			Password:    utils.EnvVarStr("NANIT_MQTT_PASSWORD", ""),
 			TopicPrefix: utils.EnvVarStr("NANIT_MQTT_PREFIX", "nanit"),
+
+			DiscoveryEnabled: utils.EnvVarBool("NANIT_MQTT_DISCOVERY", true),
+			DiscoveryPrefix:  utils.EnvVarStr("NANIT_MQTT_DISCOVERY_PREFIX", "homeassistant"),
 		}
 	}
 

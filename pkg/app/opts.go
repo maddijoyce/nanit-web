@@ -17,6 +17,11 @@ type Opts struct {
 	EventPolling     EventPollingOpts
 	History          HistoryOpts
 	WebAuth          WebAuthOpts
+
+	// DebugControl - enables the protocol experiment endpoints under /api/debug.
+	// These send operator-supplied bytes to the camera and must stay off in
+	// normal operation. See SOUNDTRACK_CAPTURE.md.
+	DebugControl bool
 }
 
 // NanitCredentials - user credentials for Nanit account

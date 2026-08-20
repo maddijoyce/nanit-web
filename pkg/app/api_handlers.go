@@ -40,6 +40,7 @@ func handleStatusAPI(w http.ResponseWriter, r *http.Request, babies []baby.Baby,
 			"night_light":     babyState.GetNightLight(),
 			"standby":         babyState.GetStandby(),
 			"volume":          babyState.GetVolume(),
+			"soundtrack":      babyState.GetSoundtrackName(),
 			"websocket_alive": babyState.GetIsWebsocketAlive(),
 			"stream_state":    babyState.GetStreamState(),
 		}
@@ -158,6 +159,42 @@ func handleControlAPI(w http.ResponseWriter, r *http.Request, controlType string
 				Msg("Volume set command sent")
 		} else {
 			http.Error(w, "Invalid action for volume", http.StatusBadRequest)
+			return
+		}
+
+	case "soundtrack":
+		if requestData.Action == "set" {
+			if requestData.Value == nil {
+				http.Error(w, "value is required for soundtrack set", http.StatusBadRequest)
+				return
+			}
+
+			if err := sendSoundCommand(*requestData.Value, conn); err != nil {
+				http.Error(w, err.Error(), http.StatusNotImplemented)
+				return
+			}
+
+			log.Info().
+				Str("baby_uid", requestData.BabyUID).
+				Int32("value", *requestData.Value).
+				Msg("Soundtrack command sent")
+		} else if requestData.Action == "toggle" {
+			newState := baby.SoundtrackOff
+			if !currentState.GetSoundtrackPlaying() {
+				newState = resumeSoundtrackID(currentState)
+			}
+
+			if err := sendSoundCommand(newState, conn); err != nil {
+				http.Error(w, err.Error(), http.StatusNotImplemented)
+				return
+			}
+
+			log.Info().
+				Str("baby_uid", requestData.BabyUID).
+				Int32("new_state", newState).
+				Msg("Soundtrack toggle command sent")
+		} else {
+			http.Error(w, "Invalid action for soundtrack", http.StatusBadRequest)
 			return
 		}
 

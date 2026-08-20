@@ -16,6 +16,7 @@ import (
 type SendLightCommandHandler func(nightLightState bool)
 type SendStandbyCommandHandler func(standbyState bool)
 type SendVolumeCommandHandler func(level int32)
+type SendSoundtrackCommandHandler func(soundtrackID int32)
 
 // Connection - MQTT context
 type Connection struct {
@@ -25,12 +26,17 @@ type Connection struct {
 	sendLightCommandHandler   SendLightCommandHandler
 	sendStandbyCommandHandler SendStandbyCommandHandler
 	sendVolumeCommandHandler  SendVolumeCommandHandler
+
+	sendSoundtrackCommandHandler SendSoundtrackCommandHandler
+
+	discovery *discoveryState
 }
 
 // NewConnection - constructor
 func NewConnection(opts Opts) *Connection {
 	return &Connection{
-		Opts: opts,
+		Opts:      opts,
+		discovery: newDiscoveryState(),
 	}
 }
 
@@ -227,6 +233,122 @@ func (conn *Connection) subscribeToVolumeCommand() {
 	}
 }
 
+func (conn *Connection) RegisterSoundtrackHandler(sendSoundtrackCommandHandler SendSoundtrackCommandHandler) {
+	conn.sendSoundtrackCommandHandler = sendSoundtrackCommandHandler
+}
+
+// subscribeToSoundtrackCommand - handles both the on/off switch and the
+// select-one-of-N topics, since they differ only in how the payload maps to a
+// soundtrack id
+func (conn *Connection) subscribeToSoundtrackCommand() {
+	commandTopic := fmt.Sprintf("%v/babies/+/soundtrack/+", conn.Opts.TopicPrefix)
+	log.Debug().
+		Str("topic", commandTopic).
+		Msg("Subscribing to command topic")
+
+	soundtrackMessageHandler := func(mqttConn MQTT.Client, msg MQTT.Message) {
+		// Extract baby UID and command from topic
+		parts := strings.Split(msg.Topic(), "/")
+		if len(parts) < 5 {
+			log.Error().Str("topic", msg.Topic()).Msg("Invalid command topic format")
+			return
+		}
+
+		babyUID := parts[2]
+		command := parts[4]
+
+		// Validate baby UID
+		if err := baby.EnsureValidBabyUID(babyUID); err != nil {
+			log.Error().Err(err).Str("topic", msg.Topic()).Msg("Invalid baby UID in MQTT soundtrack topic")
+			return
+		}
+
+		payload := strings.TrimSpace(string(msg.Payload()))
+
+		var soundtrackID int32
+		switch command {
+		case "switch":
+			enabled := payload == "true" || payload == "ON"
+			soundtrackID = conn.resolveSoundtrackSwitch(babyUID, enabled)
+
+			log.Debug().
+				Str("baby", babyUID).
+				Bool("enabled", enabled).
+				Int32("soundtrack", soundtrackID).
+				Str("payload", payload).
+				Msg("Received soundtrack switch command")
+
+		case "select":
+			resolved, ok := conn.resolveSoundtrackName(babyUID, payload)
+			if !ok {
+				log.Error().
+					Str("baby", babyUID).
+					Str("payload", payload).
+					Msg("Unknown soundtrack name; the camera has not reported a matching sound")
+				return
+			}
+			soundtrackID = resolved
+
+			log.Debug().
+				Str("baby", babyUID).
+				Int32("soundtrack", soundtrackID).
+				Str("payload", payload).
+				Msg("Received soundtrack select command")
+
+		default:
+			log.Warn().Str("command", command).Msg("Unknown command received")
+			return
+		}
+
+		if conn.sendSoundtrackCommandHandler == nil {
+			log.Warn().Str("baby", babyUID).Msg("Received soundtrack command before a camera connection was registered, ignoring")
+			return
+		}
+
+		conn.sendSoundtrackCommandHandler(soundtrackID)
+	}
+
+	if token := conn.client.Subscribe(commandTopic, 0, soundtrackMessageHandler); token.Wait() && token.Error() != nil {
+		log.Error().Err(token.Error()).Str("topic", commandTopic).Msg("Failed to subscribe to command topic")
+	}
+}
+
+// resolveSoundtrackSwitch - maps an on/off request onto a soundtrack id.
+// Turning on resumes whatever was last playing, falling back to the first sound
+// the camera reports.
+func (conn *Connection) resolveSoundtrackSwitch(babyUID string, enabled bool) int32 {
+	if !enabled {
+		return baby.SoundtrackOff
+	}
+
+	state := conn.StateManager.GetBabyState(babyUID)
+	if current := state.GetSoundtrack(); current != baby.SoundtrackOff {
+		return current
+	}
+
+	if catalog := state.GetAvailableSoundtracks(); len(catalog) > 0 {
+		return catalog[0].ID
+	}
+
+	// Nothing known yet; the first sound is the safest guess the camera will accept
+	return 1
+}
+
+// resolveSoundtrackName - maps a display name onto the id the camera reported
+func (conn *Connection) resolveSoundtrackName(babyUID string, name string) (int32, bool) {
+	if strings.EqualFold(name, baby.SoundtrackOffName) {
+		return baby.SoundtrackOff, true
+	}
+
+	for _, entry := range conn.StateManager.GetBabyState(babyUID).GetAvailableSoundtracks() {
+		if strings.EqualFold(entry.Name, name) {
+			return entry.ID, true
+		}
+	}
+
+	return 0, false
+}
+
 func runMqtt(conn *Connection, attempt utils.AttemptContext) {
 
 	if token := conn.client.Connect(); token.Wait() && token.Error() != nil {
@@ -237,7 +359,13 @@ func runMqtt(conn *Connection, attempt utils.AttemptContext) {
 
 	log.Info().Str("broker_url", conn.Opts.BrokerURL).Msg("Successfully connected to MQTT broker")
 
+	// A reconnect may mean a restarted broker with no retained messages left,
+	// so the announcements are re-published for the new session.
+	conn.discovery.reset()
+
 	unsubscribe := conn.StateManager.Subscribe(func(babyUID string, state baby.State) {
+		conn.publishDiscovery(babyUID)
+
 		publish := func(key string, value interface{}) {
 			topic := fmt.Sprintf("%v/babies/%v/%v", conn.Opts.TopicPrefix, babyUID, key)
 			log.Trace().Str("topic", topic).Interface("value", value).Msg("MQTT publish")
@@ -261,6 +389,7 @@ func runMqtt(conn *Connection, attempt utils.AttemptContext) {
 	conn.subscribeToLightCommand()
 	conn.subscribeToStandbyCommand()
 	conn.subscribeToVolumeCommand()
+	conn.subscribeToSoundtrackCommand()
 
 	// Wait until interrupt signal is received
 	<-attempt.Done()

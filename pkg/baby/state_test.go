@@ -79,3 +79,34 @@ func TestStateVolumeMerge(t *testing.T) {
 	preserved := merged.Merge(s3)
 	assert.Equal(t, int32(80), preserved.GetVolume(), "Volume should survive unrelated updates")
 }
+
+// The MQTT discovery documents reference these exact key names, so a rename
+// here would silently detach every Home Assistant entity from its state topic.
+func TestStateSoundtrackMapKeys(t *testing.T) {
+	s := baby.State{}
+	s.SetSoundtrack(2, []baby.Soundtrack{{ID: 2, Name: "Ocean"}})
+
+	m := s.AsMap(false)
+
+	assert.Equal(t, int64(2), m["soundtrack"])
+	assert.Equal(t, "Ocean", m["soundtrack_name"])
+	assert.Equal(t, true, m["soundtrack_playing"])
+}
+
+func TestStateSoundtrackOff(t *testing.T) {
+	s := baby.State{}
+	s.SetSoundtrack(baby.SoundtrackOff, []baby.Soundtrack{{ID: 2, Name: "Ocean"}})
+
+	assert.False(t, s.GetSoundtrackPlaying())
+	assert.Equal(t, "Off", s.GetSoundtrackName())
+}
+
+// An id with no catalog entry still has to produce a usable name, since the
+// catalog may not have arrived yet.
+func TestStateSoundtrackUnknownIDFallsBack(t *testing.T) {
+	s := baby.State{}
+	s.SetSoundtrack(3, nil)
+
+	assert.Equal(t, "Soundtrack 3", s.GetSoundtrackName())
+	assert.True(t, s.GetSoundtrackPlaying())
+}

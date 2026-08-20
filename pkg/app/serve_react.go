@@ -131,6 +131,24 @@ func setupAPIRoutes(babies []baby.Baby, dataDir DataDirectories, stateManager *b
 		handleControlAPI(w, r, "volume", babies, stateManager, app)
 	})
 
+	http.HandleFunc("/api/control/soundtrack", func(w http.ResponseWriter, r *http.Request) {
+		handleControlAPI(w, r, "soundtrack", babies, stateManager, app)
+	})
+
+	// Protocol experiment endpoints. Registered only when explicitly enabled, so
+	// that a normal run cannot reach them at all.
+	if app.Opts.DebugControl {
+		log.Warn().Msg("NANIT_DEBUG_CONTROL is enabled: experimental /api/debug endpoints are exposed. Do not leave this on.")
+
+		http.HandleFunc("/api/debug/control", func(w http.ResponseWriter, r *http.Request) {
+			handleDebugControlAPI(w, r, babies, app)
+		})
+
+		http.HandleFunc("/api/debug/soundtracks", func(w http.ResponseWriter, r *http.Request) {
+			handleDebugSoundtracksAPI(w, r, babies, stateManager, app)
+		})
+	}
+
 	// Device info endpoint
 	http.HandleFunc("/api/device-info/", func(w http.ResponseWriter, r *http.Request) {
 		handleDeviceInfoAPI(w, r, babies, stateManager)

@@ -1,12 +1,20 @@
 package baby
 
 import (
+	"fmt"
 	reflect "reflect"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
+)
+
+const (
+	// SoundtrackOff - the soundtrack id meaning "nothing is playing"
+	SoundtrackOff int32 = 0
+	// SoundtrackOffName - the value published to the soundtrack select entity when silent
+	SoundtrackOffName = "Off"
 )
 
 type StreamRequestState int32
@@ -25,23 +33,31 @@ const (
 	StreamState_Alive
 )
 
+// Soundtrack - a sound built into the camera, as reported by GET_SOUNDTRACKS.
+// Names are whatever the camera reports; they are not hardcoded, because the
+// built-in set differs between camera models and firmware versions.
+type Soundtrack struct {
+	ID   int32  `json:"id"`
+	Name string `json:"name"`
+}
+
 // DeviceInfo - struct holding device information from Nanit API responses
 type DeviceInfo struct {
-	FirmwareVersion      *string  `json:"firmware_version,omitempty"`
-	HardwareVersion      *string  `json:"hardware_version,omitempty"`
-	DeviceMode           *string  `json:"device_mode,omitempty"`
-	MountingMode         *int32   `json:"mounting_mode,omitempty"`
-	WiFiNetwork          *string  `json:"wifi_network,omitempty"`
-	WiFiBand             *string  `json:"wifi_band,omitempty"`
-	NightVision          *bool    `json:"night_vision,omitempty"`
-	Volume               *int32   `json:"volume,omitempty"`
-	SleepMode            *bool    `json:"sleep_mode,omitempty"`
-	StatusLight          *bool    `json:"status_light,omitempty"`
-	MicMute              *bool    `json:"mic_mute,omitempty"`
-	AntiFlicker          *string  `json:"anti_flicker,omitempty"`
-	StreamingError       *string  `json:"streaming_error,omitempty"`
-	UpgradeDownloaded    *bool    `json:"upgrade_downloaded,omitempty"`
-	AvailableSoundtracks []string `json:"available_soundtracks,omitempty"`
+	FirmwareVersion      *string      `json:"firmware_version,omitempty"`
+	HardwareVersion      *string      `json:"hardware_version,omitempty"`
+	DeviceMode           *string      `json:"device_mode,omitempty"`
+	MountingMode         *int32       `json:"mounting_mode,omitempty"`
+	WiFiNetwork          *string      `json:"wifi_network,omitempty"`
+	WiFiBand             *string      `json:"wifi_band,omitempty"`
+	NightVision          *bool        `json:"night_vision,omitempty"`
+	Volume               *int32       `json:"volume,omitempty"`
+	SleepMode            *bool        `json:"sleep_mode,omitempty"`
+	StatusLight          *bool        `json:"status_light,omitempty"`
+	MicMute              *bool        `json:"mic_mute,omitempty"`
+	AntiFlicker          *string      `json:"anti_flicker,omitempty"`
+	StreamingError       *string      `json:"streaming_error,omitempty"`
+	UpgradeDownloaded    *bool        `json:"upgrade_downloaded,omitempty"`
+	AvailableSoundtracks []Soundtrack `json:"available_soundtracks,omitempty"`
 
 	// Sensor thresholds
 	TempLowThreshold      *int32 `json:"temp_low_threshold,omitempty"`
@@ -77,6 +93,11 @@ type State struct {
 	NightLight       *bool
 	Standby          *bool
 	Volume           *int32
+
+	// Soundtrack - id of the sound the camera is currently playing, 0 when silent
+	Soundtrack        *int32
+	SoundtrackName    *string
+	SoundtrackPlaying *bool
 
 	// Device information cache
 	DeviceInfo *DeviceInfo `internal:"true"`
@@ -429,6 +450,63 @@ func (s *State) GetVolume() int32 {
 	}
 
 	return 0
+}
+
+// SetSoundtrack - records the active soundtrack, resolving the display name
+// against the catalog reported by the camera. An id of 0 means "not playing".
+func (s *State) SetSoundtrack(id int32, catalog []Soundtrack) *State {
+	s.Soundtrack = &id
+
+	playing := id != SoundtrackOff
+	s.SoundtrackPlaying = &playing
+
+	name := SoundtrackOffName
+	if playing {
+		// Fall back to the raw id when the catalog has not been fetched yet, so
+		// the entity still reports something actionable.
+		name = fmt.Sprintf("Soundtrack %d", id)
+		for _, entry := range catalog {
+			if entry.ID == id {
+				name = entry.Name
+				break
+			}
+		}
+	}
+	s.SoundtrackName = &name
+
+	return s
+}
+
+// GetSoundtrack - safely returns the active soundtrack id
+func (s *State) GetSoundtrack() int32 {
+	if s.Soundtrack != nil {
+		return *s.Soundtrack
+	}
+
+	return SoundtrackOff
+}
+
+// GetSoundtrackName - safely returns the active soundtrack name
+func (s *State) GetSoundtrackName() string {
+	if s.SoundtrackName != nil {
+		return *s.SoundtrackName
+	}
+
+	return SoundtrackOffName
+}
+
+// GetSoundtrackPlaying - safely returns whether a soundtrack is playing
+func (s *State) GetSoundtrackPlaying() bool {
+	return s.SoundtrackPlaying != nil && *s.SoundtrackPlaying
+}
+
+// GetAvailableSoundtracks - safely returns the camera's soundtrack catalog
+func (s *State) GetAvailableSoundtracks() []Soundtrack {
+	if s.DeviceInfo == nil {
+		return nil
+	}
+
+	return s.DeviceInfo.AvailableSoundtracks
 }
 
 // SetDeviceInfo - mutates device info field, returns itself

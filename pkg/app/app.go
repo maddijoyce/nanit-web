@@ -16,6 +16,7 @@ import (
 	"github.com/indiefan/home_assistant_nanit/pkg/streaming"
 	"github.com/indiefan/home_assistant_nanit/pkg/utils"
 	"github.com/indiefan/home_assistant_nanit/pkg/webauth"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
@@ -216,12 +217,19 @@ func (app *App) pollMessages(babyUID string, babyStateManager *baby.StateManager
 func (app *App) runWebsocket(babyUID string, conn *client.WebsocketConnection, childCtx utils.GracefulContext) {
 	// Reading sensor data
 	conn.RegisterMessageHandler(func(m *client.Message, conn *client.WebsocketConnection) {
+		// Full-frame protocol logging, including fields the schema does not map.
+		// Guarded by level because it decodes and renders every frame.
+		if zerolog.GlobalLevel() <= zerolog.TraceLevel {
+			logInboundFrame(babyUID, m)
+		}
+
 		// Sensor request initiated by us on start (or some other client, we don't care)
 		if *m.Type == client.Message_RESPONSE && m.Response != nil {
 			if *m.Response.RequestType == client.RequestType_GET_SENSOR_DATA && len(m.Response.SensorData) > 0 {
 				processSensorData(babyUID, m.Response.SensorData, app.BabyStateManager)
 			} else if *m.Response.RequestType == client.RequestType_GET_CONTROL && m.Response.Control != nil {
 				processLight(babyUID, m.Response.Control, app.BabyStateManager)
+				processSoundtrack(babyUID, m.Response.Control, app.BabyStateManager)
 			} else if *m.Response.RequestType == client.RequestType_GET_SETTINGS && m.Response.Settings != nil {
 				processStandby(babyUID, m.Response.Settings, app.BabyStateManager)
 			} else if *m.Response.RequestType == client.RequestType_GET_STATUS && m.Response.Status != nil {
@@ -236,6 +244,7 @@ func (app *App) runWebsocket(babyUID string, conn *client.WebsocketConnection, c
 				processSensorData(babyUID, m.Request.SensorData_, app.BabyStateManager)
 			} else if *m.Request.Type == client.RequestType_PUT_CONTROL && m.Request.Control != nil {
 				processLight(babyUID, m.Request.Control, app.BabyStateManager)
+				processSoundtrack(babyUID, m.Request.Control, app.BabyStateManager)
 			} else if *m.Request.Type == client.RequestType_PUT_SETTINGS && m.Request.Settings != nil {
 				processStandby(babyUID, m.Request.Settings, app.BabyStateManager)
 			}
@@ -251,6 +260,11 @@ func (app *App) runWebsocket(babyUID string, conn *client.WebsocketConnection, c
 		})
 		app.MQTTConnection.RegisterVolumeHandler(func(level int32) {
 			sendVolumeCommand(level, conn)
+		})
+		app.MQTTConnection.RegisterSoundtrackHandler(func(soundtrackID int32) {
+			if err := sendSoundCommand(soundtrackID, conn); err != nil {
+				log.Warn().Err(err).Msg("Unable to send soundtrack command")
+			}
 		})
 	}
 
@@ -275,6 +289,10 @@ func (app *App) runWebsocket(babyUID string, conn *client.WebsocketConnection, c
 
 	// Ask for settings to get device configuration
 	conn.SendRequest(client.RequestType_GET_SETTINGS, &client.Request{})
+
+	// Ask for the built-in soundtrack catalog. The response shape is unmapped,
+	// so this logs the raw fields rather than decoding through the schema.
+	requestSoundtracks(babyUID, conn, app.BabyStateManager)
 
 	// Ask for logs
 	// conn.SendRequest(client.RequestType_GET_LOGS, &client.Request{
