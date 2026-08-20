@@ -115,24 +115,33 @@ func handleDebugControlAPI(w http.ResponseWriter, r *http.Request, babies []baby
 	json.NewEncoder(w).Encode(result)
 }
 
-// debugPlaybackRequest - a PUT_PLAYBACK with an arbitrary field carrying the
-// track name, for confirming which tag the camera reads it from
+// debugPlaybackRequest - a PUT_PLAYBACK, optionally carrying an extra field.
+//
+// The Soundtrack fields are known and set from Name. Tag/Value/Text add one
+// further field on top, which is how a candidate duration is tested: the Nanit
+// app offers 30 minute, 60 minute and infinite timers, so Playback almost
+// certainly carries a duration this project does not yet send.
 type debugPlaybackRequest struct {
 	BabyUID string `json:"baby_uid"`
 	// Stop - send status STOPPED and nothing else
 	Stop bool `json:"stop,omitempty"`
-	// Tag - the protobuf field number on Playback to carry the payload.
-	// Ignored when Stop is set.
-	Tag int32 `json:"tag,omitempty"`
-	// Name - a length-delimited payload, e.g. the filename "Wind.wav"
+	// Name - the soundtrack filename. Sets the mapped Soundtrack on fields 3
+	// and 4, exactly as a normal command does.
 	Name string `json:"name,omitempty"`
-	// Value - a varint payload. Used instead of Name when UseVarint is set.
+	// SoundtrackType - the Soundtrack's own field 1, which has been 0 in every
+	// capture. Set it to probe what it means.
+	SoundtrackType int32 `json:"soundtrack_type,omitempty"`
+	// Tag - protobuf field number for one extra field on Playback
+	Tag int32 `json:"tag,omitempty"`
+	// Value - varint payload for Tag. Used when UseVarint is set.
 	//
 	// Wire type matters: a tag the camera maps as a varint rejects a
 	// length-delimited payload outright, which shows up as a request timeout
 	// rather than an error response.
 	Value uint64 `json:"value,omitempty"`
-	// UseVarint - encode Value as a varint rather than Name as bytes
+	// Text - length-delimited payload for Tag, used when UseVarint is not set
+	Text string `json:"text,omitempty"`
+	// UseVarint - encode Value as a varint rather than Text as bytes
 	UseVarint bool `json:"varint,omitempty"`
 }
 
@@ -167,13 +176,25 @@ func handleDebugPlaybackAPI(w http.ResponseWriter, r *http.Request, babies []bab
 
 	if requestData.Stop {
 		playback.Status = client.Playback_STOPPED.Enum()
-	} else if requestData.Tag > 0 {
-		if requestData.UseVarint {
-			encoding = "varint"
-			client.SetUnknownVarintField(playback, requestData.Tag, requestData.Value)
-		} else if requestData.Name != "" {
-			encoding = "bytes"
-			client.SetUnknownBytesField(playback, requestData.Tag, []byte(requestData.Name))
+	} else {
+		if requestData.Name != "" {
+			playback.Soundtrack = client.NewSoundtrackMessage(requestData.Name)
+			playback.SelectedSoundtrack = client.NewSoundtrackMessage(requestData.Name)
+
+			if requestData.SoundtrackType != 0 {
+				playback.Soundtrack.Type = proto.Int32(requestData.SoundtrackType)
+				playback.SelectedSoundtrack.Type = proto.Int32(requestData.SoundtrackType)
+			}
+		}
+
+		if requestData.Tag > 0 {
+			if requestData.UseVarint {
+				encoding = "varint"
+				client.SetUnknownVarintField(playback, requestData.Tag, requestData.Value)
+			} else if requestData.Text != "" {
+				encoding = "bytes"
+				client.SetUnknownBytesField(playback, requestData.Tag, []byte(requestData.Text))
+			}
 		}
 	}
 
@@ -184,6 +205,7 @@ func handleDebugPlaybackAPI(w http.ResponseWriter, r *http.Request, babies []bab
 		Str("name", requestData.Name).
 		Uint64("value", requestData.Value).
 		Str("encoding", encoding).
+		Str("sent", playback.String()).
 		Msg("DEBUG: sending experimental PUT_PLAYBACK")
 
 	awaitResponse := conn.SendRequest(client.RequestType_PUT_PLAYBACK, &client.Request{
@@ -197,7 +219,7 @@ func handleDebugPlaybackAPI(w http.ResponseWriter, r *http.Request, babies []bab
 		"name":     requestData.Name,
 		"value":    requestData.Value,
 		"encoding": encoding,
-		"sent":     true,
+		"sent":     playback.String(),
 	}
 
 	if res, err := awaitResponse(10 * time.Second); err != nil {

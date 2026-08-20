@@ -171,6 +171,11 @@ Birds, Waves, Wind) are listed via `GET_SOUNDTRACKS` and driven with
 Selection** select. Sounds are identified by filename; the select shows them
 without the extension.
 
+Playback currently stops by itself after about ten seconds. The Nanit app offers
+30/60/infinite timers, so the camera expects a duration this project does not yet
+send; finding that field is the remaining work, documented in
+[docs/soundtrack-capture.md](docs/soundtrack-capture.md).
+
 Because the camera broadcasts playback *stops* but not starts or track changes,
 state is read back with `GET_PLAYBACK` at startup and shortly after each command
 rather than relying on broadcasts. A track changed in the Nanit app may

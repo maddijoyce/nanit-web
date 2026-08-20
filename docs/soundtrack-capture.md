@@ -131,23 +131,119 @@ again shortly after every command it sends.
 
 ## 2. Status
 
-Everything needed for soundtrack control is mapped:
-
 | Capability | State |
 |---|---|
 | List built-in sounds | Working — `GET_SOUNDTRACKS` |
 | Start / stop | Working — `PUT_PLAYBACK` |
-| Choose a track | Implemented — `Playback.soundtrack` + `selectedSoundtrack` |
+| Choose a track | Working — `Playback.soundtrack` + `selectedSoundtrack` |
 | Read what is playing | Working — `GET_PLAYBACK`, polled every 5 minutes |
 | Volume | Working — `Settings.volume` |
+| **Play for a set duration** | **Unsolved — playback stops on its own after ~10s** |
 
-`SoundtrackSelectionVerified` in `pkg/client/soundtrack.go` is now `true`, so the
-Home Assistant **Soundtrack Selection** select is published.
+### Open problem: playback stops after about 10 seconds
 
-Because the camera is the authority on what is actually playing, state is
-reconciled against `GET_PLAYBACK` about 1.5s after every command. If a command
-does not take effect, the published state follows the camera rather than the
-request — the entity cannot end up claiming a track that is not playing.
+A sound started from this bridge stops by itself after roughly ten seconds. A
+sound started from the Nanit app plays indefinitely.
+
+Nothing here does that: there is no ten-second timer anywhere in the code, and
+no path stops playback except an explicit command. The reconcile read happens at
+1.5s and the poll every 5 minutes. So the camera is ending it.
+
+**The likely cause is a missing duration.** The Nanit app offers 30 minute, 60
+minute and infinite timers when starting a sound, so `Playback` must carry a
+duration somewhere. This project never sends one, and the camera appears to fall
+back to a brief default rather than to "keep playing".
+
+Where it is *not*, from the earlier sweeps: tags 2, 5, 6, 7 and 8 accepted a
+length-delimited payload and ignored it, so none of them is a varint duration —
+a known varint field rejects bytes outright. That leaves:
+
+- a tag of 9 or above, never swept
+- the `Soundtrack` message's own field 1, which has been `0` in every capture and
+  is currently guessed at as `type`
+
+### The decisive experiment (read-only)
+
+The app already knows how to set a duration, so let it, and read the result
+back. Three captures, no writes to the camera:
+
+1. In the Nanit app, start a sound with the **30 minute** timer. Then:
+
+```bash
+curl -s -X POST http://localhost:8080/api/debug/get \
+  -H 'Content-Type: application/json' -d '{"type":"GET_PLAYBACK"}' | jq
+```
+
+2. Stop it, restart with the **60 minute** timer, capture again.
+3. Stop it, restart with **infinite**, capture again.
+
+Diff the three. A field that reads 30/60, or 1800/3600, or 1800000/3600000, is
+the duration; whatever infinite uses (likely `0`, or the field being absent) is
+the value to send for continuous play.
+
+Watch two places in particular:
+
+- **New fields on `Playback`.** Anything beyond tags 1, 3 and 4 shows up under
+  `unknown_fields` with the path `Response.playback`.
+- **`Soundtrack` field 1.** If it stops being `0`, it is not a type — it is the
+  duration, and it sits inside the Soundtrack rather than beside it. The path
+  would read `Response.playback.soundtrack`.
+
+### Testing a candidate
+
+Once a field and value look right, `/api/debug/playback` sends a real command
+plus one extra field. It sets the mapped Soundtrack from `name`, exactly as a
+normal command does, so this tests the duration in isolation:
+
+```bash
+# Play Wind with a candidate duration of 1800 at tag 5
+curl -s -X POST http://localhost:8080/api/debug/playback \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Wind.wav","tag":5,"varint":true,"value":1800}' | jq
+```
+
+The response echoes the exact message sent under `sent`, so you can check it
+against what the camera reported. Then wait past the ten-second mark and see
+whether it survives.
+
+To probe the `Soundtrack`'s own field 1 instead:
+
+```bash
+curl -s -X POST http://localhost:8080/api/debug/playback \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Wind.wav","soundtrack_type":1800}' | jq
+```
+
+And to sweep the unswept tags:
+
+```bash
+for tag in 9 10 11 12 13 14 15 16; do
+  echo "--- tag $tag"
+  curl -s -X POST http://localhost:8080/api/debug/playback \
+    -H 'Content-Type: application/json' \
+    -d "{\"name\":\"Wind.wav\",\"tag\":$tag,\"varint\":true,\"value\":1800}" \
+    | jq -c '{tag,status:.status_code,msg:.status_message}'
+  sleep 15
+  curl -s -X POST http://localhost:8080/api/debug/playback \
+    -H 'Content-Type: application/json' -d '{"stop":true}' > /dev/null
+done
+```
+
+Fifteen seconds per attempt so a tag that survives past the ten-second cutoff is
+obvious. A timeout means the tag exists with a different wire type, which is a
+positive result — see how tags 3 and 4 were found.
+
+### Tracing the stop
+
+`processPlayback` logs stops at info level with the source of the report:
+
+```
+INF Camera reported soundtrack stopped source=camera-broadcast
+```
+
+- `source=camera-broadcast` — the camera announced the stop, so it decided to
+  end playback.
+- `source=get-playback` — a read came back stopped, with no announcement.
 
 ---
 
