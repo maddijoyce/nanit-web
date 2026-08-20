@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"time"
@@ -13,8 +14,12 @@ import (
 	"github.com/indiefan/home_assistant_nanit/pkg/message"
 	"github.com/indiefan/home_assistant_nanit/pkg/session"
 	"github.com/indiefan/home_assistant_nanit/pkg/utils"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
+
+// maxLoggedBodyLength - upper bound on how much of a raw response body we dump at debug level
+const maxLoggedBodyLength = 4096
 
 var myClient = &http.Client{Timeout: 10 * time.Second}
 var ErrExpiredRefreshToken = errors.New("Refresh token has expired. Relogin required.")
@@ -182,6 +187,7 @@ func (c *NanitClient) FetchAuthorized(req *http.Request, data interface{}) error
 	for i := 0; i < 2; i++ {
 		if c.SessionStore.Session.AuthToken != "" {
 			req.Header.Set("Authorization", c.SessionStore.Session.AuthToken)
+			req.Header.Set("nanit-api-version", "1") // required by the current Nanit API, without it /babies responds 200 with an empty list
 
 			res, clientErr := myClient.Do(req)
 			if clientErr != nil {
@@ -195,6 +201,25 @@ func (c *NanitClient) FetchAuthorized(req *http.Request, data interface{}) error
 				if res.StatusCode != 200 {
 					log.Error().Int("code", res.StatusCode).Msg("Server responded with unexpected status code")
 					return fmt.Errorf("server responded with unexpected status code: %d", res.StatusCode)
+				}
+
+				// Decoding straight from the body discards it, which makes an
+				// unexpected payload shape (e.g. a 200 with no "babies" key) look like
+				// an empty result rather than a failure. At debug level keep the raw
+				// body around so future breakage is diagnosable.
+				if zerolog.GlobalLevel() <= zerolog.DebugLevel {
+					rawBody, readErr := io.ReadAll(res.Body)
+					if readErr != nil {
+						log.Error().Err(readErr).Msg("Unable to read response body")
+						return fmt.Errorf("failed to read response body: %w", readErr)
+					}
+
+					log.Debug().
+						Str("url", req.URL.String()).
+						Str("body", utils.TruncateString(string(rawBody), maxLoggedBodyLength)).
+						Msg("Received authorized response")
+
+					res.Body = io.NopCloser(bytes.NewReader(rawBody))
 				}
 
 				jsonErr := json.NewDecoder(res.Body).Decode(data)

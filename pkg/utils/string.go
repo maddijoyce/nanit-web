@@ -11,3 +11,13 @@ func AnonymizeToken(token string, clearLen int) string {
 
 	return strings.Repeat("*", len(token))
 }
+
+// TruncateString - shortens a string to maxLen characters, appending an ellipsis marker if it was cut
+func TruncateString(value string, maxLen int) string {
+	runes := []rune(value)
+	if len(runes) <= maxLen {
+		return value
+	}
+
+	return string(runes[0:maxLen]) + "… (truncated)"
+}
