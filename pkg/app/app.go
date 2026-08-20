@@ -271,7 +271,7 @@ func (app *App) runWebsocket(babyUID string, conn *client.WebsocketConnection, c
 			sendVolumeCommand(level, conn)
 		})
 		app.MQTTConnection.RegisterSoundtrackHandler(func(soundtrackName string) {
-			if err := sendSoundCommand(soundtrackName, conn); err != nil {
+			if err := sendSoundCommand(babyUID, soundtrackName, conn, app.BabyStateManager); err != nil {
 				log.Warn().Err(err).Msg("Unable to send soundtrack command")
 			}
 		})

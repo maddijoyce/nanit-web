@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/indiefan/home_assistant_nanit/pkg/baby"
+	"github.com/indiefan/home_assistant_nanit/pkg/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -193,4 +194,24 @@ func TestResolveSoundtrackSwitchUsesFirstSound(t *testing.T) {
 	}))
 
 	assert.Equal(t, "White Noise.wav", conn.resolveSoundtrackSwitch("baby1", true))
+}
+
+// The select must stay unpublished while track selection is unverified: an
+// entity that silently plays the wrong sound is worse than no entity.
+func TestSoundtrackSelectWithheldWhileUnverified(t *testing.T) {
+	if client.SoundtrackSelectionVerified {
+		t.Skip("selection verified; the select is expected to publish")
+	}
+
+	// The switch, which does work, must still be announced
+	conn := testConnection()
+	var hasSwitch bool
+	for _, e := range conn.staticEntities("baby1", discoveryDevice{}) {
+		if e.objectID == "soundtrack_playing" {
+			hasSwitch = true
+		}
+		assert.NotEqual(t, "select", e.component, "the select is not a static entity")
+	}
+
+	assert.True(t, hasSwitch, "Start/stop works and must remain available")
 }

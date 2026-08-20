@@ -62,7 +62,7 @@ func TestProcessPlaybackStartedWithName(t *testing.T) {
 	stateManager := baby.NewStateManager()
 
 	playback := &client.Playback{Status: client.Playback_STARTED.Enum()}
-	client.SetUnknownBytesField(playback, soundtrackNameFieldTag, []byte("Birds.wav"))
+	client.SetUnknownBytesField(playback, client.SoundtrackNameFieldTag, []byte("Birds.wav"))
 
 	processPlayback("baby1", playback, stateManager)
 
@@ -108,5 +108,70 @@ func TestResumeSoundtrackName(t *testing.T) {
 }
 
 func TestSendSoundCommandRequiresConnection(t *testing.T) {
-	assert.Error(t, sendSoundCommand("Wind.wav", nil))
+	assert.Error(t, sendSoundCommand("baby1", "Wind.wav", nil, baby.NewStateManager()))
+}
+
+// The debug probe sets selector flags as unknown varints. On the wire a proto2
+// bool is a varint 1, so that must be byte-identical to setting the generated
+// field — otherwise the probe would not be testing what the app really sends.
+func TestDebugSelectorFlagsMatchGeneratedEncoding(t *testing.T) {
+	probe := buildDebugGetRequest(client.RequestType_GET_CONTROL, []int32{2})
+	probeBytes, err := proto.Marshal(probe.GetControl_)
+	require.NoError(t, err)
+
+	generated, err := proto.Marshal(&client.GetControl{NightLight: proto.Bool(true)})
+	require.NoError(t, err)
+
+	assert.Equal(t, generated, probeBytes)
+}
+
+// Unmapped selector tags must survive onto the wire, since that is the whole
+// point of probing for fields the schema cannot name.
+func TestDebugSelectorAcceptsUnmappedTags(t *testing.T) {
+	probe := buildDebugGetRequest(client.RequestType_GET_CONTROL, []int32{5, 6})
+	encoded, err := proto.Marshal(probe.GetControl_)
+	require.NoError(t, err)
+
+	decoded := &client.GetControl{}
+	require.NoError(t, proto.Unmarshal(encoded, decoded))
+
+	for _, tag := range []int32{5, 6} {
+		value, ok := client.GetUnknownVarintField(decoded, tag)
+		assert.True(t, ok, "tag %d should be present", tag)
+		assert.Equal(t, uint64(1), value)
+	}
+}
+
+// Request types with no selector must still produce a valid request
+func TestDebugGetRequestWithoutSelector(t *testing.T) {
+	probe := buildDebugGetRequest(client.RequestType_GET_SETTINGS, []int32{1, 2})
+	assert.Nil(t, probe.GetControl_)
+	assert.Nil(t, probe.GetStatus_)
+	assert.Nil(t, probe.GetSensorData)
+}
+
+// While selection is unverified the send path must not claim a specific track
+// is playing, since the camera plays whatever it already had selected.
+func TestSoundtrackSelectionUnverifiedDoesNotAssertTrack(t *testing.T) {
+	if client.SoundtrackSelectionVerified {
+		t.Skip("selection has been verified; the optimistic path applies instead")
+	}
+
+	// The switch must still show "on", so playing is recorded even though the
+	// track name is not.
+	state := baby.NewState()
+	state.SetSoundtrackPlaying(true)
+
+	assert.True(t, state.GetSoundtrackPlaying())
+	assert.Equal(t, baby.SoundtrackOffName, state.GetSoundtrackName(),
+		"An unverified selection must not be presented as the playing track")
+}
+
+func TestSetSoundtrackPlayingFalseResetsName(t *testing.T) {
+	state := baby.NewState()
+	state.SetSoundtrack("Wind.wav")
+	state.SetSoundtrackPlaying(false)
+
+	assert.False(t, state.GetSoundtrackPlaying())
+	assert.Equal(t, baby.SoundtrackOffName, state.GetSoundtrackName())
 }

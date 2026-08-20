@@ -9,6 +9,7 @@ import (
 	"github.com/indiefan/home_assistant_nanit/pkg/baby"
 	"github.com/indiefan/home_assistant_nanit/pkg/client"
 	"github.com/rs/zerolog/log"
+	"google.golang.org/protobuf/proto"
 )
 
 // ---------------------------------------------------------------------------
@@ -119,11 +120,19 @@ type debugPlaybackRequest struct {
 	BabyUID string `json:"baby_uid"`
 	// Stop - send status STOPPED and nothing else
 	Stop bool `json:"stop,omitempty"`
-	// Tag - the protobuf field number on Playback to put the name in.
-	// Ignored when Stop is set, or when Name is empty.
+	// Tag - the protobuf field number on Playback to carry the payload.
+	// Ignored when Stop is set.
 	Tag int32 `json:"tag,omitempty"`
-	// Name - the soundtrack filename, e.g. "Wind.wav"
+	// Name - a length-delimited payload, e.g. the filename "Wind.wav"
 	Name string `json:"name,omitempty"`
+	// Value - a varint payload. Used instead of Name when UseVarint is set.
+	//
+	// Wire type matters: a tag the camera maps as a varint rejects a
+	// length-delimited payload outright, which shows up as a request timeout
+	// rather than an error response.
+	Value uint64 `json:"value,omitempty"`
+	// UseVarint - encode Value as a varint rather than Name as bytes
+	UseVarint bool `json:"varint,omitempty"`
 }
 
 // handleDebugPlaybackAPI - sends a PUT_PLAYBACK, optionally carrying the track
@@ -153,15 +162,18 @@ func handleDebugPlaybackAPI(w http.ResponseWriter, r *http.Request, babies []bab
 	}
 
 	playback := &client.Playback{Status: client.Playback_STARTED.Enum()}
+	encoding := "none"
+
 	if requestData.Stop {
 		playback.Status = client.Playback_STOPPED.Enum()
-	} else if requestData.Name != "" {
-		if requestData.Tag < 1 {
-			http.Error(w, "tag must be a positive protobuf field number", http.StatusBadRequest)
-			return
+	} else if requestData.Tag > 0 {
+		if requestData.UseVarint {
+			encoding = "varint"
+			client.SetUnknownVarintField(playback, requestData.Tag, requestData.Value)
+		} else if requestData.Name != "" {
+			encoding = "bytes"
+			client.SetUnknownBytesField(playback, requestData.Tag, []byte(requestData.Name))
 		}
-
-		client.SetUnknownBytesField(playback, requestData.Tag, []byte(requestData.Name))
 	}
 
 	log.Warn().
@@ -169,6 +181,8 @@ func handleDebugPlaybackAPI(w http.ResponseWriter, r *http.Request, babies []bab
 		Bool("stop", requestData.Stop).
 		Int32("tag", requestData.Tag).
 		Str("name", requestData.Name).
+		Uint64("value", requestData.Value).
+		Str("encoding", encoding).
 		Msg("DEBUG: sending experimental PUT_PLAYBACK")
 
 	awaitResponse := conn.SendRequest(client.RequestType_PUT_PLAYBACK, &client.Request{
@@ -180,6 +194,8 @@ func handleDebugPlaybackAPI(w http.ResponseWriter, r *http.Request, babies []bab
 		"stop":     requestData.Stop,
 		"tag":      requestData.Tag,
 		"name":     requestData.Name,
+		"value":    requestData.Value,
+		"encoding": encoding,
 		"sent":     true,
 	}
 
@@ -241,6 +257,129 @@ func handleDebugSoundtracksAPI(w http.ResponseWriter, r *http.Request, babies []
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
+}
+
+// debugGetRequest - issues an arbitrary GET request and dumps everything that
+// comes back, mapped or not
+type debugGetRequest struct {
+	BabyUID string `json:"baby_uid"`
+	// Type - request type name, e.g. "GET_CONTROL" or "GET_SETTINGS"
+	Type string `json:"type"`
+	// Flags - selector field tags to set true on the request's selector message.
+	//
+	// Several GET requests are filtered: GetControl asks per-item (ptz=1,
+	// nightLight=2, nightLightTimeout=3, sensorDataTransferEn=4), so the camera
+	// only reports what was asked for. Setting unmapped selector tags is how you
+	// find out whether the camera will report something the schema has no name
+	// for.
+	Flags []int32 `json:"flags,omitempty"`
+}
+
+// handleDebugGetAPI - sends any GET request type and returns the decoded reply
+// together with every field the schema does not map
+func handleDebugGetAPI(w http.ResponseWriter, r *http.Request, babies []baby.Baby, app *App) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var requestData debugGetRequest
+	if err := json.NewDecoder(r.Body).Decode(&requestData); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	typeValue, ok := client.RequestType_value[requestData.Type]
+	if !ok {
+		http.Error(w, fmt.Sprintf("unknown request type %q", requestData.Type), http.StatusBadRequest)
+		return
+	}
+	requestType := client.RequestType(typeValue)
+
+	babyUID, err := resolveDebugBabyUID(requestData.BabyUID, babies)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	conn := app.getConnection(babyUID)
+	if conn == nil {
+		http.Error(w, "WebSocket not connected", http.StatusServiceUnavailable)
+		return
+	}
+
+	req := buildDebugGetRequest(requestType, requestData.Flags)
+
+	log.Warn().
+		Str("baby_uid", babyUID).
+		Str("type", requestData.Type).
+		Interface("flags", requestData.Flags).
+		Msg("DEBUG: sending experimental GET request")
+
+	awaitResponse := conn.SendRequest(requestType, req)
+
+	res, err := awaitResponse(30 * time.Second)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("%v failed: %v", requestData.Type, err), http.StatusGatewayTimeout)
+		return
+	}
+
+	result := map[string]interface{}{
+		"baby_uid":       babyUID,
+		"type":           requestData.Type,
+		"status_code":    res.GetStatusCode(),
+		"status_message": res.GetStatusMessage(),
+		"unknown_fields": client.DescribeUnknownFields(res),
+		"raw":            res.String(),
+	}
+
+	log.Warn().
+		Str("type", requestData.Type).
+		Int32("status_code", res.GetStatusCode()).
+		Str("raw", res.String()).
+		Msg("DEBUG: experimental GET response")
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// buildDebugGetRequest - attaches the selector message the request type expects,
+// with the requested tags set true.
+//
+// Selector flags are written as unknown varint fields. On the wire a proto2
+// bool is a varint 1, so this is byte-identical to setting the generated field
+// while also allowing tags the schema has no name for.
+func buildDebugGetRequest(requestType client.RequestType, flags []int32) *client.Request {
+	req := &client.Request{}
+
+	var selector proto.Message
+	switch requestType {
+	case client.RequestType_GET_CONTROL:
+		control := &client.GetControl{}
+		req.GetControl_ = control
+		selector = control
+	case client.RequestType_GET_STATUS:
+		status := &client.GetStatus{}
+		req.GetStatus_ = status
+		selector = status
+	case client.RequestType_GET_SENSOR_DATA:
+		sensorData := &client.GetSensorData{}
+		req.GetSensorData = sensorData
+		selector = sensorData
+	default:
+		// GET_SETTINGS and friends take no selector
+		return req
+	}
+
+	for _, tag := range flags {
+		if tag < 1 {
+			continue
+		}
+
+		client.SetUnknownVarintField(selector, tag, 1)
+	}
+
+	return req
 }
 
 // resolveDebugBabyUID - validates an explicit UID, or picks the only baby when

@@ -356,27 +356,24 @@ func logInboundFrame(babyUID string, m *client.Message) {
 //
 // One thing is still unconfirmed: which Playback field names the track to play.
 // Stopping needs no name, and the camera does not broadcast track changes, so it
-// could not be read off the wire. soundtrackNameFieldTag holds the current
+// could not be read off the wire. client.SoundtrackNameFieldTag holds the current
 // hypothesis and is written as an unknown field, so other tags can be tried
 // without regenerating the schema. See SOUNDTRACK_CAPTURE.md.
 // ---------------------------------------------------------------------------
 
-// soundtrackNameFieldTag - field number on Playback carrying the track filename.
-//
-// Tag 2 is a hypothesis, not an observation: it is the next free tag after the
-// required status, and it is what Soundtrack itself uses for the name. Verify
-// with /api/debug/playback before trusting it.
-const soundtrackNameFieldTag int32 = 2
-
 // sendSoundCommand - starts the named soundtrack, or stops playback when given
-// an empty name or baby.SoundtrackOffName
-func sendSoundCommand(name string, conn *client.WebsocketConnection) error {
+// an empty name or baby.SoundtrackOffName.
+//
+// State is updated optimistically because the camera broadcasts a playback stop
+// but not a start; without this a switch turned on in Home Assistant would
+// spring straight back to off.
+func sendSoundCommand(babyUID string, name string, conn *client.WebsocketConnection, stateManager *baby.StateManager) error {
 	if conn == nil {
 		return errors.New("no websocket connection")
 	}
 
 	if name == "" || strings.EqualFold(name, baby.SoundtrackOffName) {
-		log.Info().Msg("Stopping soundtrack playback")
+		log.Info().Str("baby_uid", babyUID).Msg("Stopping soundtrack playback")
 
 		conn.SendRequest(client.RequestType_PUT_PLAYBACK, &client.Request{
 			Playback: &client.Playback{
@@ -384,23 +381,38 @@ func sendSoundCommand(name string, conn *client.WebsocketConnection) error {
 			},
 		})
 
+		stateManager.Update(babyUID, *baby.NewState().SetSoundtrack(baby.SoundtrackOffName))
 		return nil
 	}
 
-	log.Info().Str("soundtrack", name).Msg("Starting soundtrack playback")
+	log.Info().Str("baby_uid", babyUID).Str("soundtrack", name).Msg("Starting soundtrack playback")
 
 	playback := &client.Playback{
 		Status: client.Playback_STARTED.Enum(),
 	}
 
-	// Written as an unknown field while the tag is unconfirmed; swapping the
-	// constant is enough to try another one.
-	client.SetUnknownBytesField(playback, soundtrackNameFieldTag, []byte(name))
+	// Carried as an unknown field while the tag is unconfirmed, so a different
+	// one can be tried without regenerating the schema.
+	client.SetUnknownBytesField(playback, client.SoundtrackNameFieldTag, []byte(name))
 
 	conn.SendRequest(client.RequestType_PUT_PLAYBACK, &client.Request{
 		Playback: playback,
 	})
 
+	stateUpdate := baby.NewState()
+	if client.SoundtrackSelectionVerified {
+		stateUpdate.SetSoundtrack(name)
+	} else {
+		// The camera plays whatever it already had selected, so recording the
+		// requested name would be a guess presented as fact.
+		log.Warn().
+			Str("requested", name).
+			Msg("Soundtrack selection is unverified: the camera will play its own selected track")
+
+		stateUpdate.SetSoundtrackPlaying(true)
+	}
+
+	stateManager.Update(babyUID, *stateUpdate)
 	return nil
 }
 
@@ -431,7 +443,7 @@ func processPlayback(babyUID string, playback *client.Playback, stateManager *ba
 		name = soundtrackUnknownName
 	}
 
-	if raw, ok := client.GetUnknownBytesField(playback, soundtrackNameFieldTag); ok {
+	if raw, ok := client.GetUnknownBytesField(playback, client.SoundtrackNameFieldTag); ok {
 		name = string(raw)
 	}
 

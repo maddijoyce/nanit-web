@@ -155,7 +155,7 @@ per camera:
 | Standby | switch | |
 | Volume | number | Camera speaker volume, 0–100 |
 | Soundtrack | switch | Built-in sound playback on/off |
-| Soundtrack Selection | select | Options come from the camera's own catalog (e.g. White Noise, Birds, Waves, Wind) |
+| Soundtrack Selection | select | Withheld until track selection is verified — see the note below |
 
 Simply enable MQTT in your configuration and devices will appear automatically.
 Set `NANIT_MQTT_DISCOVERY=false` to publish state topics without announcing
@@ -164,13 +164,18 @@ entities.
 The video feed is not announced via discovery; add the camera manually as
 described below.
 
-**Soundtrack control is partially verified.** Starting and stopping playback use
-`PUT_PLAYBACK` and are confirmed working. The camera lists its built-in sounds
-(White Noise, Birds, Waves, Wind) via `GET_SOUNDTRACKS`, identified by filename
-rather than by any numeric id. What is *not* yet confirmed is which field on the
-`Playback` message names the track to play, so selecting a specific sound may
-not work until that is checked against a camera — it is one constant to adjust.
-See [SOUNDTRACK_CAPTURE.md](SOUNDTRACK_CAPTURE.md).
+**Soundtrack control is partially working.** Starting and stopping playback use
+`PUT_PLAYBACK` and are confirmed, and are exposed as the **Soundtrack** switch.
+The camera lists its built-in sounds (White Noise, Birds, Waves, Wind) via
+`GET_SOUNDTRACKS`.
+
+Choosing *which* sound plays is **not** solved: `PUT_PLAYBACK` starts whatever
+track the camera already had selected, and the field that changes the selection
+has not been identified. The **Soundtrack Selection** select entity is therefore
+withheld from discovery rather than shipped as a control that silently plays the
+wrong sound. Set the track from the Nanit app for now.
+[SOUNDTRACK_CAPTURE.md](SOUNDTRACK_CAPTURE.md) documents what is known and the
+remaining experiments.
 
 Note also that the camera broadcasts playback *stops* but not starts or track
 changes, so starting a sound from the Nanit app is not reflected in Home

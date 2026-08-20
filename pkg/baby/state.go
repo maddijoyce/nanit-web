@@ -475,6 +475,19 @@ func (s *State) SetSoundtrack(name string) *State {
 	return s
 }
 
+// SetSoundtrackPlaying - records that playback is running without asserting
+// which track it is. Used while track selection is unverified.
+func (s *State) SetSoundtrackPlaying(playing bool) *State {
+	s.SoundtrackPlaying = &playing
+
+	if !playing {
+		name := SoundtrackOffName
+		s.SoundtrackName = &name
+	}
+
+	return s
+}
+
 // GetSoundtrackName - safely returns the active soundtrack name
 func (s *State) GetSoundtrackName() string {
 	if s.SoundtrackName != nil {

@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/indiefan/home_assistant_nanit/pkg/baby"
+	"github.com/indiefan/home_assistant_nanit/pkg/client"
 	"github.com/rs/zerolog/log"
 )
 
@@ -116,6 +117,20 @@ func (conn *Connection) publishDiscovery(babyUID string) {
 		}
 
 		log.Info().Str("baby_uid", babyUID).Msg("Published Home Assistant discovery configuration")
+	}
+
+	// Choosing a specific track is not known to work yet: the camera plays
+	// whatever it already had selected. Publishing the select would offer a
+	// control that silently plays the wrong sound, so it is withheld until the
+	// protocol is confirmed. Start/stop is unaffected — that is the switch.
+	if !client.SoundtrackSelectionVerified {
+		if !alreadyAnnounced {
+			log.Info().
+				Str("baby_uid", babyUID).
+				Msg("Soundtrack select entity withheld: track selection is unverified (see SOUNDTRACK_CAPTURE.md)")
+		}
+
+		return
 	}
 
 	// The select's options come from the camera, so it is announced separately

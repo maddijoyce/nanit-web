@@ -204,7 +204,7 @@ func handleControlAPI(w http.ResponseWriter, r *http.Request, controlType string
 				return
 			}
 
-			if err := sendSoundCommand(*requestData.Name, conn); err != nil {
+			if err := sendSoundCommand(requestData.BabyUID, *requestData.Name, conn, stateManager); err != nil {
 				http.Error(w, err.Error(), http.StatusServiceUnavailable)
 				return
 			}
@@ -224,7 +224,7 @@ func handleControlAPI(w http.ResponseWriter, r *http.Request, controlType string
 				}
 			}
 
-			if err := sendSoundCommand(newState, conn); err != nil {
+			if err := sendSoundCommand(requestData.BabyUID, newState, conn, stateManager); err != nil {
 				http.Error(w, err.Error(), http.StatusServiceUnavailable)
 				return
 			}
