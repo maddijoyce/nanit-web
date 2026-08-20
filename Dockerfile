@@ -16,12 +16,11 @@ COPY frontend/ ./
 RUN npm run build
 
 # Backend build stage
-FROM --platform=$BUILDPLATFORM golang:1.24.0 AS backend-build
+FROM golang:1.24.0 AS backend-build
 
-# Install build dependencies for SQLite and cross-compilation
+# Install build dependencies for SQLite
 RUN apt-get update && apt-get install -y \
     gcc libc6-dev sqlite3 libsqlite3-dev \
-    gcc-aarch64-linux-gnu libc6-dev-arm64-cross \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -39,13 +38,10 @@ ADD scripts /app/scripts
 COPY --from=frontend-build /app/frontend/dist /app/web
 
 ARG CI_COMMIT_SHORT_SHA
-ARG TARGETOS TARGETARCH
 
-# Enable CGO for SQLite support with cross-compilation
-RUN if [ "$TARGETARCH" = "arm64" ]; then \
-        export CC=aarch64-linux-gnu-gcc; \
-    fi && \
-    CGO_ENABLED=1 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags "-X main.GitCommit=$CI_COMMIT_SHORT_SHA" -o ./bin/nanit ./cmd/nanit/*.go
+# CGO is required for SQLite. This stage runs on the target platform, so the
+# build is native and needs no cross-compiler.
+RUN CGO_ENABLED=1 go build -ldflags "-X main.GitCommit=$CI_COMMIT_SHORT_SHA" -o ./bin/nanit ./cmd/nanit/*.go
 
 # Final production stage
 FROM debian:bookworm-slim
