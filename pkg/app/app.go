@@ -305,8 +305,14 @@ func (app *App) runWebsocket(babyUID string, conn *client.WebsocketConnection, c
 		},
 	})
 
-	// Ask for settings to get device configuration
-	conn.SendRequest(client.RequestType_GET_SETTINGS, &client.Request{})
+	// Ask for settings to get device configuration. The selector is required:
+	// without it the camera answers "missed 'getsettings' field", which is why
+	// settings previously only ever arrived via unsolicited broadcasts.
+	conn.SendRequest(client.RequestType_GET_SETTINGS, &client.Request{
+		GetSettings_: &client.GetSettings{
+			All: utils.ConstRefBool(true),
+		},
+	})
 
 	// Ask for the built-in soundtrack catalog. The response shape is unmapped,
 	// so this logs the raw fields rather than decoding through the schema.

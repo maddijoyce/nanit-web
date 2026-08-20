@@ -438,6 +438,10 @@ func buildDebugGetRequest(requestType client.RequestType, flags []int32) *client
 		status := &client.GetStatus{}
 		req.GetStatus_ = status
 		selector = status
+	case client.RequestType_GET_SETTINGS:
+		settings := &client.GetSettings{}
+		req.GetSettings_ = settings
+		selector = settings
 	case client.RequestType_GET_SENSOR_DATA:
 		sensorData := &client.GetSensorData{}
 		req.GetSensorData = sensorData
@@ -445,6 +449,11 @@ func buildDebugGetRequest(requestType client.RequestType, flags []int32) *client
 	default:
 		// GET_SETTINGS and friends take no selector
 		return req
+	}
+
+	if len(flags) == 0 {
+		// Every mapped selector uses field 1 as its "all" switch
+		flags = []int32{1}
 	}
 
 	for _, tag := range flags {

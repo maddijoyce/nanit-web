@@ -252,6 +252,15 @@ message GetStatus {
   optional bool all = 1;
 }
 
+// GetSettings - selector for GET_SETTINGS.
+//
+// The camera rejects GET_SETTINGS without it: "Bad Request: missed 'getsettings'
+// field". Confirmed against a live camera on Request tag 6, mirroring
+// settings = 5 the way getStatus = 8 mirrors status = 7.
+message GetSettings {
+  optional bool all = 1;
+}
+
 message Request {
   required int32 id = 1;
   required RequestType type = 2;
@@ -265,6 +274,7 @@ message Request {
   optional Settings settings = 5;
   optional Status status = 7;
   optional GetStatus getStatus = 8;
+  optional GetSettings getSettings = 6;
   optional Playback playback = 16;
   optional GetLogs getLogs = 18;
 }

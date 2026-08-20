@@ -161,9 +161,10 @@ func TestEncodeSelectorMessageMultipleFlags(t *testing.T) {
 	assert.Empty(t, client.EncodeSelectorMessage(nil))
 }
 
-// The selector must survive being attached to a Request as an unknown field,
-// which is how a getSettings the schema lacks would be sent
-func TestSelectorAttachesToRequestAsUnknownField(t *testing.T) {
+// A selector attached by tag must land on the real field once that tag is
+// mapped. Tag 6 was found this way and is now Request.getSettings, so the bytes
+// the probe sends decode as the generated message rather than as unknown.
+func TestSelectorAttachedAtTag6DecodesAsGetSettings(t *testing.T) {
 	req := &client.Request{
 		Id:   proto.Int32(1),
 		Type: client.RequestType_GET_SETTINGS.Enum(),
@@ -175,10 +176,36 @@ func TestSelectorAttachesToRequestAsUnknownField(t *testing.T) {
 	decoded := &client.Request{}
 	require.NoError(t, proto.Unmarshal(encoded, decoded))
 
+	assert.Empty(t, client.DescribeUnknownFields(decoded), "tag 6 is mapped now")
+	assert.True(t, decoded.GetGetSettings_().GetAll())
+
+	// And the generated field produces the same bytes the probe sent
+	generated, err := proto.Marshal(&client.Request{
+		Id:           proto.Int32(1),
+		Type:         client.RequestType_GET_SETTINGS.Enum(),
+		GetSettings_: &client.GetSettings{All: proto.Bool(true)},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, generated, encoded)
+}
+
+// A tag with no mapping still comes back as an unknown field, which is what
+// makes sweeping for the next missing selector work
+func TestSelectorAtUnmappedTagStaysUnknown(t *testing.T) {
+	req := &client.Request{
+		Id:   proto.Int32(1),
+		Type: client.RequestType_GET_SETTINGS.Enum(),
+	}
+	client.SetUnknownBytesField(req, 19, client.EncodeSelectorMessage([]int32{1}))
+
+	encoded, err := proto.Marshal(req)
+	require.NoError(t, err)
+	decoded := &client.Request{}
+	require.NoError(t, proto.Unmarshal(encoded, decoded))
+
 	unknown := client.DescribeUnknownFields(decoded)
 	require.Len(t, unknown, 1)
-	assert.Equal(t, int32(6), unknown[0].Tag)
+	assert.Equal(t, int32(19), unknown[0].Tag)
 	require.Len(t, unknown[0].Nested, 1)
-	assert.Equal(t, int32(1), unknown[0].Nested[0].Tag)
 	assert.Equal(t, uint64(1), unknown[0].Nested[0].Value)
 }

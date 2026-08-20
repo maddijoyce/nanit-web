@@ -192,67 +192,69 @@ Neither `GET_SOUNDTRACKS` nor `GET_PLAYBACK` reports the per-track setting, and
 
 Two places remain untested.
 
-**1. Settings.** Still the prime suspect: camera-side, persistent, and never
-successfully read.
+**1. Settings — now readable, and it does not hold the mode.**
 
-`GET_SETTINGS` fails, and the camera says why:
+`GET_SETTINGS` needed a selector the schema was missing. The camera named it:
 
 ```
 Bad Request: missed 'getsettings' field
 ```
 
-It wants a selector sub-message on `Request` that **is not in this schema at
-all**. The mapped selectors are `getSensorData = 12`, `getStatus = 8`,
-`getControl = 17` and `getLogs = 18`; there is no `getSettings`. `Request` has
-tags 3, 6, 9, 10, 11, 14 and 19+ free, and `getSettings = 6` would mirror
-`settings = 5` the way `getStatus = 8` mirrors `status = 7`.
+It is `Request.getSettings = 6`, mirroring `settings = 5` the way
+`getStatus = 8` mirrors `status = 7`. Now in the schema, and sent at startup —
+which fixes a standing bug: every previous `GET_SETTINGS` was rejected and the
+reply never awaited, so settings only ever reached this project through
+unsolicited `PUT_SETTINGS` broadcasts.
 
-This also means the startup `GET_SETTINGS` has been failing all along. Its reply
-is never awaited, so the error was discarded silently, and everything known
-about settings has arrived through unsolicited `PUT_SETTINGS` broadcasts
-instead.
+The full reply carries a lot the schema does not map. Recorded here so it does
+not have to be captured again:
 
-Sweeping is unambiguous here, because the wrong tag keeps producing the same
-error and the right one does not:
+| Tag | Wire | Value | Guess |
+|---|---|---|---|
+| 16 | message | four fixed64 doubles | calibration of some kind |
+| 19 | message | `{1: 4500, 2: 5500}` | a low/high pair — humidity milli, or colour temperature |
+| 21 | varint | 70 | |
+| 22 | message | `{2:1, 3:0, 7:0, 8:0, 9:1, 11:17, 12:15, 13:fixed32, 14:15}` | |
+| 23 | varint | 85 | |
+| 24 | varint | 100 | |
+| 25 | varint | 1 | |
+| 26 | message | `{1:0, 2:0}` | |
+| 27 | varint | 0 | |
+| **28** | varint | **3600** | **one hour in seconds — the most soundtrack-shaped value here** |
+| 29 | varint | 0 | |
+| 31 | message | `{2: 10.0f, 3: 0}` | |
+| 32 | message | `{1: 1}` | |
+| 35 | message | `{1:0, 2:0}` | same shape as 26 |
+| 36 | message | `{1: {1:0, 2:1000}}` | repeated, one entry |
+| 37 | message | `{1:100, 2:1, 3:92}` | |
+
+`Settings.streams[]` also carries unmapped tags 7 (a message of encoder
+parameters), 9 and 10.
+
+**Nothing here looks like a per-track mode.** The app has Birds on 30min and the
+other three on loop, so a camera-side store would need four entries; no repeated
+field of length four exists. Tag 28 = 3600 is the one suggestive value, but it
+is a single global number, not per track.
+
+**The test that settles it:** change a track's timer in the app, re-read, and
+diff.
 
 ```bash
-for tag in 6 3 9 10 11 14 19 20; do
-  echo -n "tag $tag: "
-  curl -s -X POST http://localhost:8080/api/debug/get \
-    -H 'Content-Type: application/json' \
-    -d "{\"type\":\"GET_SETTINGS\",\"selector_tag\":$tag}" \
-    | jq -c '{error, status: .status_code, unknown: .unknown_fields}'
-done
+curl -s -X POST http://localhost:8080/api/debug/get \
+  -H 'Content-Type: application/json' -d '{"type":"GET_SETTINGS"}' \
+  | jq -S '.unknown_fields' > before.json
+# change Birds from 30min to loop in the app, then
+curl -s -X POST http://localhost:8080/api/debug/get \
+  -H 'Content-Type: application/json' -d '{"type":"GET_SETTINGS"}' \
+  | jq -S '.unknown_fields' > after.json
+diff before.json after.json
 ```
 
-`selector_tag` attaches a boolean selector as an unknown field at that tag; a
-test asserts the encoding is byte-identical to a generated one, so a hit is a
-real hit. Add `"flags":[1,2,3]` to set several booleans if a bare `all` is not
-enough.
-
-Once a settings reply comes back, `processStandby` logs anything the schema
-cannot name at info level:
-
-```
-INF Settings carried unmapped fields baby_uid=... unknown_fields=[...]
-```
-
-`Settings` maps tags 2, 7-12, 15, 18 and 20, leaving 1, 3-6, 13, 14, 16, 17, 19
-and 21+ free — plenty of room for a soundtrack section. If a field appears,
-change a track's timer in the app and compare.
-
-`GET_LOGS` fails the same way with `missed 'getlogs' field`; that selector *is*
-mapped, and the probe now takes `"logs_url"` to fill it. The camera uploads its
-logs to that URL, which may well name the setting outright.
-
-**Status carries an unmapped field too**, seen at startup:
-
-```
-INF Status carried unmapped fields unknown_fields=[{"path":"Status","tag":8,"value":125,"wire_type":"varint"}]
-```
-
-Tag 8, varint, 125. Meaning unknown and probably unrelated to soundtracks —
-recorded here so it is not rediscovered from scratch.
+If nothing moves, the mode is not stored on the camera at all — it is a
+parameter of the play command, held only as runtime state. That is consistent
+with everything seen so far: the app keeps the per-track preference locally
+(it survives a force-quit), sends it when you press play, and the camera then
+loops on its own (which is why playback survives the app being killed).
 
 **2. Inside the Soundtrack message.** `Soundtrack` has only tags 1 and 2 in the
 schema and nothing has probed past them. A per-track setting belongs here rather
