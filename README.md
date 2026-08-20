@@ -27,7 +27,7 @@ docker run -d \
   -p 8080:8080 \
   -p 1935:1935 \
   -e NANIT_RTMP_ADDR=YOUR_LOCAL_IP:1935 \
-  deltathreed/nanit-web
+  ghcr.io/maddijoyce/nanit-web
 ```
 
 2. **Open the web dashboard:**
@@ -88,7 +88,7 @@ docker run -d \
   -e NANIT_MQTT_BROKER_URL=tcp://homeassistant:1883 \
   -e NANIT_MQTT_USERNAME=mqtt_user \
   -e NANIT_MQTT_PASSWORD=mqtt_pass \
-  deltathreed/nanit-web
+  ghcr.io/maddijoyce/nanit-web
 ```
 
 **Important:** Use your local IP address (reachable by the Nanit camera), not `127.0.0.1` or `localhost`.

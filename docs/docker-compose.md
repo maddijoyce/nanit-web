@@ -11,7 +11,7 @@ version: '3.8'
 services:
   nanit-web:
     # Image to pull, adjust the :suffix for your version tag
-    image: deltathreed/nanit-web:latest
+    image: ghcr.io/maddijoyce/nanit-web:latest
     container_name: nanit-web
     # Makes the container auto-start whenever you restart your computer
     restart: unless-stopped
