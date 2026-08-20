@@ -24,18 +24,19 @@ export const createVideoJSOptions = (hlsUrl: string) => ({
   // Live streaming specific options
   liveui: true,
   liveTracker: {
-    trackingThreshold: 20, // Consider "live" if within 20 seconds
-    liveTolerance: 15,     // Show live UI if within 15 seconds of live edge
+    trackingThreshold: 10, // Consider "live" if within 10 seconds
+    liveTolerance: 8,      // Show live UI if within 8 seconds of live edge
   },
   
   // HLS source configuration - will be set when streaming starts
   sources: [],
   
-  // HTML5 options for better live streaming
+  // HTML5 options for better live streaming.
+  // Video.js 8 ships VHS, which reads `html5.vhs` - the old `html5.hls` key is
+  // from videojs-contrib-hls and is ignored, so these options never applied.
   html5: {
-    hls: {
+    vhs: {
       enableLowInitialPlaylist: true,
-      smoothQualityChange: true,
       overrideNative: false, // Let Safari use native HLS support
     },
   },

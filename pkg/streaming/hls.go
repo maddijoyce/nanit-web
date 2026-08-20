@@ -30,6 +30,17 @@ type StreamError struct {
 	Code    string `json:"code"`
 }
 
+// HLS tuning. Segments can only be cut on a keyframe, so the encoder is told to
+// emit one exactly every hlsSegmentSeconds. Without that, libx264 keeps its
+// default 250-frame GOP and the muxer has to run each segment on to the next
+// keyframe - roughly 15 seconds at the cam's frame rate - which the player then
+// buffers several of before it starts. That is where the bulk of the observed
+// latency came from.
+const (
+	hlsSegmentSeconds = 2
+	hlsPlaylistSize   = 5
+)
+
 // Common error types
 const (
 	ErrorTypeRTMPConnection = "rtmp_connection"
@@ -101,16 +112,28 @@ func (h *HLSTranscoder) Start() error {
 	segmentPath := filepath.Join(h.hlsDir, "segment_%d.ts")
 
 	args := []string{
+		// Input: read straight through rather than filling a buffer first
+		"-fflags", "nobuffer",
+		"-flags", "low_delay",
+		"-analyzeduration", "1000000", // 1s, enough to detect the streams
+		"-probesize", "1000000",
 		"-i", h.rtmpURL, // Input RTMP stream
 		"-c:v", "libx264", // Video codec
 		"-preset", "ultrafast", // Fast encoding
 		"-tune", "zerolatency", // Low latency
+		// One keyframe per segment, so segments actually come out
+		// hlsSegmentSeconds long (see the note on hlsSegmentSeconds)
+		"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", hlsSegmentSeconds),
+		"-sc_threshold", "0", // No extra keyframes on scene changes
 		"-c:a", "aac", // Audio codec
 		"-f", "hls", // HLS format
-		"-hls_time", "2", // 2 second segments
-		"-hls_list_size", "5", // Keep 5 segments in playlist
-		"-hls_flags", "delete_segments", // Auto-delete old segments
+		"-hls_time", fmt.Sprintf("%d", hlsSegmentSeconds),
+		"-hls_list_size", fmt.Sprintf("%d", hlsPlaylistSize),
+		// Auto-delete old segments; every segment now starts on a keyframe
+		"-hls_flags", "delete_segments+independent_segments",
 		"-hls_segment_filename", segmentPath,
+		"-muxdelay", "0",
+		"-muxpreload", "0",
 		"-y", // Overwrite output
 		playlistPath,
 	}
