@@ -10,26 +10,26 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rs/zerolog/log"
 	"github.com/indiefan/home_assistant_nanit/pkg/baby"
+	"github.com/rs/zerolog/log"
 )
 
 // ServeReact serves the React frontend instead of Go templates
 func ServeReact(babies []baby.Baby, dataDir DataDirectories, stateManager *baby.StateManager, app *App) {
 	port := app.Opts.HTTPPort
-	
+
 	log.Info().Msg("=== Setting up HTTP server routes for React frontend ===")
 	log.Info().Int("babies_count", len(babies)).Msg("Number of babies available")
 
 	// Serve React static files
 	fs := http.FileServer(http.Dir("web"))
-	
+
 	// Handle Next.js static assets (_next/static/*)
 	http.Handle("/_next/static/", http.StripPrefix("/_next/static/", http.FileServer(http.Dir("web/_next/static"))))
-	
+
 	// Handle other static files (favicon, etc.)
 	http.Handle("/static/", http.StripPrefix("/static/", fs))
-	
+
 	// Handle Next.js app routes - serve appropriate HTML files
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// API routes should not serve the React app
@@ -37,7 +37,7 @@ func ServeReact(babies []baby.Baby, dataDir DataDirectories, stateManager *baby.
 			http.NotFound(w, r)
 			return
 		}
-		
+
 		// Handle Next.js static files directly
 		if strings.HasPrefix(r.URL.Path, "/_next/") {
 			// Try to serve the file directly
@@ -47,7 +47,7 @@ func ServeReact(babies []baby.Baby, dataDir DataDirectories, stateManager *baby.
 				return
 			}
 		}
-		
+
 		// Try to serve Next.js route-specific HTML files first
 		var routePath string
 		if r.URL.Path == "/" {
@@ -56,14 +56,14 @@ func ServeReact(babies []baby.Baby, dataDir DataDirectories, stateManager *baby.
 			// For other routes like /settings, look for /settings/index.html
 			routePath = filepath.Join("web", strings.TrimPrefix(r.URL.Path, "/"), "index.html")
 		}
-		
+
 		// Check if route-specific HTML exists
 		if _, err := os.Stat(routePath); err == nil {
 			w.Header().Set("Content-Type", "text/html")
 			http.ServeFile(w, r, routePath)
 			return
 		}
-		
+
 		// Fallback to main index.html for client-side routing
 		indexPath := filepath.Join("web", "index.html")
 		if _, err := os.Stat(indexPath); err != nil {
@@ -71,7 +71,7 @@ func ServeReact(babies []baby.Baby, dataDir DataDirectories, stateManager *baby.
 			http.Error(w, "Frontend not built. Run 'npm run build' in frontend directory.", http.StatusNotFound)
 			return
 		}
-		
+
 		w.Header().Set("Content-Type", "text/html")
 		http.ServeFile(w, r, indexPath)
 	})
@@ -98,7 +98,7 @@ func requireAuth(app *App, handler http.HandlerFunc) http.HandlerFunc {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(w).Encode(map[string]string{
-				"error": "authentication_required",
+				"error":   "authentication_required",
 				"message": "Please log in to access this resource",
 			})
 			return
@@ -218,12 +218,12 @@ func setupAPIRoutes(babies []baby.Baby, dataDir DataDirectories, stateManager *b
 	http.HandleFunc("/api/health/", func(w http.ResponseWriter, r *http.Request) {
 		handleHealthAPI(w, r, app)
 	})
-	
+
 	// Basic liveness check (no authentication required)
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		handleLivenessAPI(w, r)
 	})
-	
+
 	// Readiness check with detailed service status (no authentication required)
 	http.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
 		handleReadinessAPI(w, r, app)
@@ -316,7 +316,7 @@ func handleWebAuthLoginAPI(w http.ResponseWriter, r *http.Request, app *App) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(map[string]string{
-			"error": "invalid_password",
+			"error":   "invalid_password",
 			"message": "Invalid password",
 		})
 		return
@@ -451,7 +451,7 @@ func handleChangePasswordAPI(w http.ResponseWriter, r *http.Request, app *App) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(map[string]string{
-			"error": "invalid_current_password",
+			"error":   "invalid_current_password",
 			"message": "Current password is incorrect",
 		})
 		return
@@ -507,7 +507,7 @@ func handleRemovePasswordAPI(w http.ResponseWriter, r *http.Request, app *App) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(map[string]string{
-			"error": "invalid_password",
+			"error":   "invalid_password",
 			"message": "Password is incorrect",
 		})
 		return

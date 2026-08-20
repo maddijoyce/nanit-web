@@ -8,11 +8,11 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/rs/zerolog/log"
 	"github.com/indiefan/home_assistant_nanit/pkg/app"
 	"github.com/indiefan/home_assistant_nanit/pkg/mqtt"
 	"github.com/indiefan/home_assistant_nanit/pkg/utils"
 	"github.com/indiefan/home_assistant_nanit/pkg/webauth"
+	"github.com/rs/zerolog/log"
 )
 
 func main() {
@@ -37,7 +37,7 @@ func main() {
 			Password:     utils.EnvVarStr("NANIT_PASSWORD", ""),
 			RefreshToken: utils.EnvVarStr("NANIT_REFRESH_TOKEN", ""),
 		},
-		SessionFile:     utils.EnvVarStr("NANIT_SESSION_FILE", "/data/session.json"),
+		SessionFile: utils.EnvVarStr("NANIT_SESSION_FILE", "/data/session.json"),
 		DataDirectories: func() app.DataDirectories {
 			dirs, err := ensureDataDirectories()
 			if err != nil {
@@ -46,8 +46,8 @@ func main() {
 			}
 			return dirs
 		}(),
-		HTTPEnabled:     true,
-		HTTPPort:        utils.EnvVarInt("NANIT_HTTP_PORT", 8080),
+		HTTPEnabled: true,
+		HTTPPort:    utils.EnvVarInt("NANIT_HTTP_PORT", 8080),
 		EventPolling: app.EventPollingOpts{
 			// Event message polling disabled by default
 			Enabled: utils.EnvVarBool("NANIT_EVENTS_POLLING", false),
@@ -136,20 +136,20 @@ func main() {
 // handleResetPassword removes the web password file (CLI command)
 func handleResetPassword() {
 	passwordFile := "/data/web_password.json"
-	
+
 	webAuth := webauth.NewWebAuth(passwordFile)
-	
+
 	if !webAuth.IsPasswordSet() {
 		fmt.Println("No password is currently set.")
 		return
 	}
-	
+
 	err := webAuth.RemovePassword()
 	if err != nil {
 		fmt.Printf("Error removing password: %v\n", err)
 		os.Exit(1)
 	}
-	
+
 	fmt.Println("Web password protection has been disabled successfully.")
 	fmt.Println("You can now access the web interface without a password.")
 }

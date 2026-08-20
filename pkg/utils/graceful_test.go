@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/indiefan/home_assistant_nanit/pkg/utils"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestGracefulRunner(t *testing.T) {

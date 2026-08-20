@@ -9,8 +9,8 @@ import (
 	"os"
 	"time"
 
-	"golang.org/x/crypto/bcrypt"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // PasswordData stores the hashed password and metadata
@@ -95,7 +95,7 @@ func (wa *WebAuth) RemovePassword() error {
 
 	// Clear all sessions
 	wa.sessions = make(map[string]SessionData)
-	
+
 	log.Info().Msg("Password protection disabled")
 	return nil
 }

@@ -18,9 +18,9 @@ const (
 // ServiceHealth contains health information for a service
 type ServiceHealth struct {
 	Status      ServiceStatus          `json:"status"`
-	LastCheck   time.Time             `json:"last_check"`
-	LastHealthy time.Time             `json:"last_healthy,omitempty"`
-	Message     string                `json:"message,omitempty"`
+	LastCheck   time.Time              `json:"last_check"`
+	LastHealthy time.Time              `json:"last_healthy,omitempty"`
+	Message     string                 `json:"message,omitempty"`
 	Details     map[string]interface{} `json:"details,omitempty"`
 }
 
@@ -43,7 +43,7 @@ func (hm *HealthManager) UpdateServiceHealth(serviceName string, status ServiceS
 	defer hm.mutex.Unlock()
 
 	now := time.Now()
-	
+
 	health, exists := hm.services[serviceName]
 	if !exists {
 		health = &ServiceHealth{}

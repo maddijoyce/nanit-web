@@ -27,28 +27,28 @@ const (
 
 // DeviceInfo - struct holding device information from Nanit API responses
 type DeviceInfo struct {
-	FirmwareVersion     *string `json:"firmware_version,omitempty"`
-	HardwareVersion     *string `json:"hardware_version,omitempty"`
-	DeviceMode          *string `json:"device_mode,omitempty"`
-	MountingMode        *int32  `json:"mounting_mode,omitempty"`
-	WiFiNetwork         *string `json:"wifi_network,omitempty"`
-	WiFiBand            *string `json:"wifi_band,omitempty"`
-	NightVision         *bool   `json:"night_vision,omitempty"`
-	Volume              *int32  `json:"volume,omitempty"`
-	SleepMode           *bool   `json:"sleep_mode,omitempty"`
-	StatusLight         *bool   `json:"status_light,omitempty"`
-	MicMute             *bool   `json:"mic_mute,omitempty"`
-	AntiFlicker         *string `json:"anti_flicker,omitempty"`
-	StreamingError      *string `json:"streaming_error,omitempty"`
-	UpgradeDownloaded   *bool   `json:"upgrade_downloaded,omitempty"`
+	FirmwareVersion      *string  `json:"firmware_version,omitempty"`
+	HardwareVersion      *string  `json:"hardware_version,omitempty"`
+	DeviceMode           *string  `json:"device_mode,omitempty"`
+	MountingMode         *int32   `json:"mounting_mode,omitempty"`
+	WiFiNetwork          *string  `json:"wifi_network,omitempty"`
+	WiFiBand             *string  `json:"wifi_band,omitempty"`
+	NightVision          *bool    `json:"night_vision,omitempty"`
+	Volume               *int32   `json:"volume,omitempty"`
+	SleepMode            *bool    `json:"sleep_mode,omitempty"`
+	StatusLight          *bool    `json:"status_light,omitempty"`
+	MicMute              *bool    `json:"mic_mute,omitempty"`
+	AntiFlicker          *string  `json:"anti_flicker,omitempty"`
+	StreamingError       *string  `json:"streaming_error,omitempty"`
+	UpgradeDownloaded    *bool    `json:"upgrade_downloaded,omitempty"`
 	AvailableSoundtracks []string `json:"available_soundtracks,omitempty"`
-	
+
 	// Sensor thresholds
-	TempLowThreshold  *int32 `json:"temp_low_threshold,omitempty"`
-	TempHighThreshold *int32 `json:"temp_high_threshold,omitempty"`
+	TempLowThreshold      *int32 `json:"temp_low_threshold,omitempty"`
+	TempHighThreshold     *int32 `json:"temp_high_threshold,omitempty"`
 	HumidityLowThreshold  *int32 `json:"humidity_low_threshold,omitempty"`
 	HumidityHighThreshold *int32 `json:"humidity_high_threshold,omitempty"`
-	
+
 	// Stream configuration
 	MobileBitrate    *int32 `json:"mobile_bitrate,omitempty"`
 	MobileFPS        *int32 `json:"mobile_fps,omitempty"`
@@ -56,17 +56,17 @@ type DeviceInfo struct {
 	DVRFPS           *int32 `json:"dvr_fps,omitempty"`
 	AnalyticsBitrate *int32 `json:"analytics_bitrate,omitempty"`
 	AnalyticsFPS     *int32 `json:"analytics_fps,omitempty"`
-	
+
 	// Metadata
-	LastUpdated      *int64  `json:"last_updated,omitempty"`  // Unix timestamp when device info was last updated
+	LastUpdated *int64 `json:"last_updated,omitempty"` // Unix timestamp when device info was last updated
 }
 
 // State - struct holding information about state of a single baby
 type State struct {
-	StreamState        *StreamState        `internal:"true"`
-	StreamRequestState *StreamRequestState `internal:"true"`
-	IsWebsocketAlive   *bool               `internal:"true"`
-	LastVideoPacketTime *int64             `internal:"true"` // Unix timestamp of last video packet received
+	StreamState         *StreamState        `internal:"true"`
+	StreamRequestState  *StreamRequestState `internal:"true"`
+	IsWebsocketAlive    *bool               `internal:"true"`
+	LastVideoPacketTime *int64              `internal:"true"` // Unix timestamp of last video packet received
 
 	MotionTimestamp  *int32 // int32 is used to represent UTC timestamp
 	SoundTimestamp   *int32 // int32 is used to represent UTC timestamp
@@ -76,7 +76,7 @@ type State struct {
 	HumidityMilli    *int32
 	NightLight       *bool
 	Standby          *bool
-	
+
 	// Device information cache
 	DeviceInfo *DeviceInfo `internal:"true"`
 }
@@ -146,10 +146,10 @@ func (state *State) mergeDeviceInfo(current *DeviceInfo, patch *DeviceInfo) *Dev
 	if current == nil {
 		return patch
 	}
-	
+
 	// Create a copy of current
 	merged := *current
-	
+
 	// Merge non-nil fields from patch
 	if patch.FirmwareVersion != nil {
 		merged.FirmwareVersion = patch.FirmwareVersion
@@ -226,7 +226,7 @@ func (state *State) mergeDeviceInfo(current *DeviceInfo, patch *DeviceInfo) *Dev
 	if patch.AnalyticsFPS != nil {
 		merged.AnalyticsFPS = patch.AnalyticsFPS
 	}
-	
+
 	return &merged
 }
 
@@ -356,7 +356,7 @@ func (state *State) IsActivelyStreaming() bool {
 	if state.LastVideoPacketTime == nil {
 		return false
 	}
-	
+
 	lastPacketTime := time.Unix(*state.LastVideoPacketTime, 0)
 	return time.Since(lastPacketTime) < 10*time.Second
 }
@@ -434,7 +434,7 @@ func (s *State) UpdateDeviceInfoField(field string, value interface{}) *State {
 	if s.DeviceInfo == nil {
 		s.DeviceInfo = &DeviceInfo{}
 	}
-	
+
 	switch field {
 	case "firmware_version":
 		if v, ok := value.(string); ok {
@@ -469,6 +469,6 @@ func (s *State) UpdateDeviceInfoField(field string, value interface{}) *State {
 			s.DeviceInfo.StreamingError = &v
 		}
 	}
-	
+
 	return s
 }

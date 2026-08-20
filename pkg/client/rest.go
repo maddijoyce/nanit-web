@@ -178,7 +178,7 @@ func (c *NanitClient) Login() error {
 	if err := c.SessionStore.Save(); err != nil {
 		log.Warn().Err(err).Msg("Failed to save session after login")
 	}
-	
+
 	return nil
 }
 

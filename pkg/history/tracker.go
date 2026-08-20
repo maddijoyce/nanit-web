@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/indiefan/home_assistant_nanit/pkg/baby"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/rs/zerolog/log"
-	"github.com/indiefan/home_assistant_nanit/pkg/baby"
 )
 
 //go:embed schema.sql
@@ -18,20 +18,20 @@ var schemaSQL embed.FS
 
 // Tracker manages historical data storage and retrieval
 type Tracker struct {
-	db       *sql.DB
-	dbPath   string
-	enabled  bool
+	db      *sql.DB
+	dbPath  string
+	enabled bool
 }
 
 // SensorReading represents a point-in-time sensor measurement
 type SensorReading struct {
-	ID               int64     `json:"id"`
-	BabyUID          string    `json:"baby_uid"`
-	Timestamp        int64     `json:"timestamp"`
+	ID                 int64    `json:"id"`
+	BabyUID            string   `json:"baby_uid"`
+	Timestamp          int64    `json:"timestamp"`
 	TemperatureCelsius *float64 `json:"temperature_celsius,omitempty"`
-	HumidityPercent   *float64 `json:"humidity_percent,omitempty"`
-	IsNight          *bool     `json:"is_night,omitempty"`
-	CreatedAt        int64     `json:"created_at"`
+	HumidityPercent    *float64 `json:"humidity_percent,omitempty"`
+	IsNight            *bool    `json:"is_night,omitempty"`
+	CreatedAt          int64    `json:"created_at"`
 }
 
 // Event represents a motion or sound event
@@ -48,46 +48,46 @@ type StateChange struct {
 	ID         int64  `json:"id"`
 	BabyUID    string `json:"baby_uid"`
 	Timestamp  int64  `json:"timestamp"`
-	StateType  string `json:"state_type"`  // "night_light" or "standby"
+	StateType  string `json:"state_type"` // "night_light" or "standby"
 	StateValue bool   `json:"state_value"`
 	CreatedAt  int64  `json:"created_at"`
 }
 
 // HistoricalSummary provides aggregated data for a time period
 type HistoricalSummary struct {
-	BabyUID            string  `json:"baby_uid"`
-	StartTime          int64   `json:"start_time"`
-	EndTime            int64   `json:"end_time"`
-	AvgTemperature     *float64 `json:"avg_temperature,omitempty"`
-	MinTemperature     *float64 `json:"min_temperature,omitempty"`
-	MaxTemperature     *float64 `json:"max_temperature,omitempty"`
-	AvgHumidity        *float64 `json:"avg_humidity,omitempty"`
-	MinHumidity        *float64 `json:"min_humidity,omitempty"`
-	MaxHumidity        *float64 `json:"max_humidity,omitempty"`
-	MotionEventCount   int64   `json:"motion_event_count"`
-	SoundEventCount    int64   `json:"sound_event_count"`
-	NightLightChanges  int64   `json:"night_light_changes"`
-	StandbyChanges     int64   `json:"standby_changes"`
-	DayModeMinutes     int64   `json:"day_mode_minutes"`
-	NightModeMinutes   int64   `json:"night_mode_minutes"`
-	DayModePercentage  float64 `json:"day_mode_percentage"`
-	NightModePercentage float64 `json:"night_mode_percentage"`
+	BabyUID             string   `json:"baby_uid"`
+	StartTime           int64    `json:"start_time"`
+	EndTime             int64    `json:"end_time"`
+	AvgTemperature      *float64 `json:"avg_temperature,omitempty"`
+	MinTemperature      *float64 `json:"min_temperature,omitempty"`
+	MaxTemperature      *float64 `json:"max_temperature,omitempty"`
+	AvgHumidity         *float64 `json:"avg_humidity,omitempty"`
+	MinHumidity         *float64 `json:"min_humidity,omitempty"`
+	MaxHumidity         *float64 `json:"max_humidity,omitempty"`
+	MotionEventCount    int64    `json:"motion_event_count"`
+	SoundEventCount     int64    `json:"sound_event_count"`
+	NightLightChanges   int64    `json:"night_light_changes"`
+	StandbyChanges      int64    `json:"standby_changes"`
+	DayModeMinutes      int64    `json:"day_mode_minutes"`
+	NightModeMinutes    int64    `json:"night_mode_minutes"`
+	DayModePercentage   float64  `json:"day_mode_percentage"`
+	NightModePercentage float64  `json:"night_mode_percentage"`
 }
 
 // DayNightAnalytics provides detailed day/night mode analysis
 type DayNightAnalytics struct {
-	BabyUID              string                    `json:"baby_uid"`
-	StartTime            int64                     `json:"start_time"`
-	EndTime              int64                     `json:"end_time"`
-	TotalMinutes         int64                     `json:"total_minutes"`
-	DayModeMinutes       int64                     `json:"day_mode_minutes"`
-	NightModeMinutes     int64                     `json:"night_mode_minutes"`
-	UnknownModeMinutes   int64                     `json:"unknown_mode_minutes"`
-	DayModePercentage    float64                   `json:"day_mode_percentage"`
-	NightModePercentage  float64                   `json:"night_mode_percentage"`
-	UnknownModePercentage float64                  `json:"unknown_mode_percentage"`
-	ModeTransitions      int64                     `json:"mode_transitions"`
-	DayNightChanges      []DayNightChange          `json:"day_night_changes"`
+	BabyUID               string           `json:"baby_uid"`
+	StartTime             int64            `json:"start_time"`
+	EndTime               int64            `json:"end_time"`
+	TotalMinutes          int64            `json:"total_minutes"`
+	DayModeMinutes        int64            `json:"day_mode_minutes"`
+	NightModeMinutes      int64            `json:"night_mode_minutes"`
+	UnknownModeMinutes    int64            `json:"unknown_mode_minutes"`
+	DayModePercentage     float64          `json:"day_mode_percentage"`
+	NightModePercentage   float64          `json:"night_mode_percentage"`
+	UnknownModePercentage float64          `json:"unknown_mode_percentage"`
+	ModeTransitions       int64            `json:"mode_transitions"`
+	DayNightChanges       []DayNightChange `json:"day_night_changes"`
 }
 
 // DayNightChange represents a transition between day and night mode
@@ -106,7 +106,7 @@ func NewTracker(dataDir string, enabled bool) (*Tracker, error) {
 	}
 
 	dbPath := filepath.Join(dataDir, "history.db")
-	
+
 	// Ensure data directory exists
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create data directory: %v", err)
@@ -153,7 +153,7 @@ func (t *Tracker) Close() error {
 	if !t.enabled || t.db == nil {
 		return nil
 	}
-	
+
 	log.Info().Msg("Closing historical data tracker")
 	return t.db.Close()
 }
@@ -170,15 +170,15 @@ func (t *Tracker) TrackSensorData(babyUID string, state baby.State) error {
 	}
 
 	timestamp := time.Now().Unix()
-	
+
 	var temperature *float64
 	var humidity *float64
-	
+
 	if state.TemperatureMilli != nil {
 		temp := float64(*state.TemperatureMilli) / 1000.0
 		temperature = &temp
 	}
-	
+
 	if state.HumidityMilli != nil {
 		hum := float64(*state.HumidityMilli) / 1000.0
 		humidity = &hum
@@ -188,7 +188,7 @@ func (t *Tracker) TrackSensorData(babyUID string, state baby.State) error {
 		INSERT INTO sensor_readings (baby_uid, timestamp, temperature_celsius, humidity_percent, is_night)
 		VALUES (?, ?, ?, ?, ?)
 	`
-	
+
 	_, err := t.db.Exec(query, babyUID, timestamp, temperature, humidity, state.IsNight)
 	if err != nil {
 		log.Error().Err(err).Str("baby_uid", babyUID).Msg("Failed to record sensor data")
@@ -201,7 +201,7 @@ func (t *Tracker) TrackSensorData(babyUID string, state baby.State) error {
 		Interface("humidity", humidity).
 		Interface("is_night", state.IsNight).
 		Msg("Recorded sensor reading")
-		
+
 	return nil
 }
 
@@ -215,7 +215,7 @@ func (t *Tracker) TrackEvent(babyUID string, eventType string, eventTimestamp in
 		INSERT INTO events (baby_uid, timestamp, event_type)
 		VALUES (?, ?, ?)
 	`
-	
+
 	_, err := t.db.Exec(query, babyUID, eventTimestamp, eventType)
 	if err != nil {
 		log.Error().Err(err).
@@ -230,7 +230,7 @@ func (t *Tracker) TrackEvent(babyUID string, eventType string, eventTimestamp in
 		Str("event_type", eventType).
 		Int64("timestamp", eventTimestamp).
 		Msg("Recorded event")
-		
+
 	return nil
 }
 
@@ -241,12 +241,12 @@ func (t *Tracker) TrackStateChange(babyUID string, stateType string, value bool)
 	}
 
 	timestamp := time.Now().Unix()
-	
+
 	query := `
 		INSERT INTO state_changes (baby_uid, timestamp, state_type, state_value)
 		VALUES (?, ?, ?, ?)
 	`
-	
+
 	_, err := t.db.Exec(query, babyUID, timestamp, stateType, value)
 	if err != nil {
 		log.Error().Err(err).
@@ -261,7 +261,7 @@ func (t *Tracker) TrackStateChange(babyUID string, stateType string, value bool)
 		Str("state_type", stateType).
 		Bool("value", value).
 		Msg("Recorded state change")
-		
+
 	return nil
 }
 
@@ -278,7 +278,7 @@ func (t *Tracker) GetSensorReadings(babyUID string, startTime, endTime int64, li
 		ORDER BY timestamp DESC
 		LIMIT ?
 	`
-	
+
 	rows, err := t.db.Query(query, babyUID, startTime, endTime, limit)
 	if err != nil {
 		return nil, err
@@ -288,7 +288,7 @@ func (t *Tracker) GetSensorReadings(babyUID string, startTime, endTime int64, li
 	var readings []SensorReading
 	for rows.Next() {
 		var r SensorReading
-		err := rows.Scan(&r.ID, &r.BabyUID, &r.Timestamp, &r.TemperatureCelsius, 
+		err := rows.Scan(&r.ID, &r.BabyUID, &r.Timestamp, &r.TemperatureCelsius,
 			&r.HumidityPercent, &r.IsNight, &r.CreatedAt)
 		if err != nil {
 			return nil, err
@@ -308,10 +308,10 @@ func (t *Tracker) GetSensorReadingsWithSampling(babyUID string, startTime, endTi
 	// Determine sampling strategy based on timeframe
 	var query string
 	var args []interface{}
-	
+
 	timeframeDuration := endTime - startTime
 	timeframeHours := timeframeDuration / 3600
-	
+
 	if timeframeHours <= 6 {
 		// ≤ 6 hours: Raw data (every reading)
 		query = `
@@ -321,7 +321,7 @@ func (t *Tracker) GetSensorReadingsWithSampling(babyUID string, startTime, endTi
 			ORDER BY timestamp ASC
 		`
 		args = []interface{}{babyUID, startTime, endTime}
-		
+
 	} else if timeframeHours <= 24 {
 		// 6-24 hours: 5-minute averages
 		query = `
@@ -339,9 +339,9 @@ func (t *Tracker) GetSensorReadingsWithSampling(babyUID string, startTime, endTi
 			ORDER BY timestamp ASC
 		`
 		args = []interface{}{babyUID, babyUID, startTime, endTime}
-		
+
 	} else if timeframeHours <= 168 { // 7 days
-		// 1-7 days: 1-hour averages  
+		// 1-7 days: 1-hour averages
 		query = `
 			SELECT 
 				0 as id,
@@ -357,7 +357,7 @@ func (t *Tracker) GetSensorReadingsWithSampling(babyUID string, startTime, endTi
 			ORDER BY timestamp ASC
 		`
 		args = []interface{}{babyUID, babyUID, startTime, endTime}
-		
+
 	} else {
 		// > 7 days: 6-hour averages
 		query = `
@@ -376,7 +376,7 @@ func (t *Tracker) GetSensorReadingsWithSampling(babyUID string, startTime, endTi
 		`
 		args = []interface{}{babyUID, babyUID, startTime, endTime}
 	}
-	
+
 	rows, err := t.db.Query(query, args...)
 	if err != nil {
 		return nil, err
@@ -386,10 +386,10 @@ func (t *Tracker) GetSensorReadingsWithSampling(babyUID string, startTime, endTi
 	var readings []SensorReading
 	for rows.Next() {
 		var r SensorReading
-		
+
 		if timeframeHours <= 6 {
 			// Raw data - is_night is boolean
-			err := rows.Scan(&r.ID, &r.BabyUID, &r.Timestamp, &r.TemperatureCelsius, 
+			err := rows.Scan(&r.ID, &r.BabyUID, &r.Timestamp, &r.TemperatureCelsius,
 				&r.HumidityPercent, &r.IsNight, &r.CreatedAt)
 			if err != nil {
 				return nil, err
@@ -397,19 +397,19 @@ func (t *Tracker) GetSensorReadingsWithSampling(babyUID string, startTime, endTi
 		} else {
 			// Aggregated data - is_night is integer, convert to boolean
 			var isNightInt *int64
-			err := rows.Scan(&r.ID, &r.BabyUID, &r.Timestamp, &r.TemperatureCelsius, 
+			err := rows.Scan(&r.ID, &r.BabyUID, &r.Timestamp, &r.TemperatureCelsius,
 				&r.HumidityPercent, &isNightInt, &r.CreatedAt)
 			if err != nil {
 				return nil, err
 			}
-			
+
 			// Convert is_night integer back to boolean pointer
 			if isNightInt != nil {
 				isNight := *isNightInt == 1
 				r.IsNight = &isNight
 			}
 		}
-		
+
 		readings = append(readings, r)
 	}
 
@@ -444,7 +444,7 @@ func (t *Tracker) GetEvents(babyUID string, startTime, endTime int64, eventType 
 		`
 		args = []interface{}{babyUID, startTime, endTime, limit}
 	}
-	
+
 	rows, err := t.db.Query(query, args...)
 	if err != nil {
 		return nil, err
@@ -489,7 +489,7 @@ func (t *Tracker) GetSummary(babyUID string, startTime, endTime int64) (*Histori
 		WHERE baby_uid = ? AND timestamp BETWEEN ? AND ?
 		AND (temperature_celsius IS NOT NULL OR humidity_percent IS NOT NULL)
 	`
-	
+
 	err := t.db.QueryRow(sensorQuery, babyUID, startTime, endTime).Scan(
 		&summary.AvgTemperature, &summary.MinTemperature, &summary.MaxTemperature,
 		&summary.AvgHumidity, &summary.MinHumidity, &summary.MaxHumidity)
@@ -505,7 +505,7 @@ func (t *Tracker) GetSummary(babyUID string, startTime, endTime int64) (*Histori
 		FROM events 
 		WHERE baby_uid = ? AND timestamp BETWEEN ? AND ?
 	`
-	
+
 	err = t.db.QueryRow(eventQuery, babyUID, startTime, endTime).Scan(
 		&summary.MotionEventCount, &summary.SoundEventCount)
 	if err != nil && err != sql.ErrNoRows {
@@ -520,7 +520,7 @@ func (t *Tracker) GetSummary(babyUID string, startTime, endTime int64) (*Histori
 		FROM state_changes 
 		WHERE baby_uid = ? AND timestamp BETWEEN ? AND ?
 	`
-	
+
 	err = t.db.QueryRow(stateQuery, babyUID, startTime, endTime).Scan(
 		&summary.NightLightChanges, &summary.StandbyChanges)
 	if err != nil && err != sql.ErrNoRows {
@@ -544,9 +544,9 @@ func (t *Tracker) GetDayNightAnalytics(babyUID string, startTime, endTime int64)
 	}
 
 	analytics := &DayNightAnalytics{
-		BabyUID:   babyUID,
-		StartTime: startTime,
-		EndTime:   endTime,
+		BabyUID:      babyUID,
+		StartTime:    startTime,
+		EndTime:      endTime,
 		TotalMinutes: (endTime - startTime) / 60,
 	}
 
@@ -590,7 +590,7 @@ func (t *Tracker) GetDayNightAnalytics(babyUID string, startTime, endTime int64)
 			ORDER BY timestamp DESC
 			LIMIT 1
 		`
-		
+
 		var lastKnownState bool
 		err := t.db.QueryRow(lastKnownQuery, babyUID, startTime).Scan(&lastKnownState)
 		if err != nil {
@@ -599,7 +599,7 @@ func (t *Tracker) GetDayNightAnalytics(babyUID string, startTime, endTime int64)
 			analytics.UnknownModePercentage = 100.0
 			return analytics, nil
 		}
-		
+
 		// Carry forward the last known state for the entire period
 		if lastKnownState {
 			analytics.NightModeMinutes = analytics.TotalMinutes
@@ -608,7 +608,7 @@ func (t *Tracker) GetDayNightAnalytics(babyUID string, startTime, endTime int64)
 			analytics.DayModeMinutes = analytics.TotalMinutes
 			analytics.DayModePercentage = 100.0
 		}
-		
+
 		return analytics, nil
 	}
 
@@ -620,7 +620,7 @@ func (t *Tracker) GetDayNightAnalytics(babyUID string, startTime, endTime int64)
 
 	// Determine initial mode - check for last known state before this period
 	var currentMode bool
-	
+
 	lastKnownQuery := `
 		SELECT is_night
 		FROM sensor_readings
@@ -628,13 +628,13 @@ func (t *Tracker) GetDayNightAnalytics(babyUID string, startTime, endTime int64)
 		ORDER BY timestamp DESC
 		LIMIT 1
 	`
-	
+
 	err = t.db.QueryRow(lastKnownQuery, babyUID, startTime).Scan(&currentMode)
 	if err != nil {
 		// No previous state, use the first reading's state
 		currentMode = readings[0].isNight
 	}
-	
+
 	currentModeStart := startTime
 
 	// Add time from startTime to first reading
@@ -657,7 +657,7 @@ func (t *Tracker) GetDayNightAnalytics(babyUID string, startTime, endTime int64)
 				DurationMins: (reading.timestamp - currentModeStart) / 60,
 			}
 			changes = append(changes, change)
-			
+
 			transitions++
 			currentMode = reading.isNight
 			currentModeStart = reading.timestamp
@@ -717,10 +717,10 @@ func (t *Tracker) Cleanup(retentionDays int) error {
 	}
 
 	cutoffTime := time.Now().AddDate(0, 0, -retentionDays).Unix()
-	
+
 	tables := []string{"sensor_readings", "events", "state_changes"}
 	totalDeleted := 0
-	
+
 	for _, table := range tables {
 		query := fmt.Sprintf("DELETE FROM %s WHERE created_at < ?", table)
 		result, err := t.db.Exec(query, cutoffTime)
@@ -728,23 +728,23 @@ func (t *Tracker) Cleanup(retentionDays int) error {
 			log.Error().Err(err).Str("table", table).Msg("Failed to cleanup old data")
 			continue
 		}
-		
+
 		if deleted, err := result.RowsAffected(); err == nil {
 			totalDeleted += int(deleted)
 			log.Debug().Str("table", table).Int64("deleted", deleted).Msg("Cleaned up old records")
 		}
 	}
-	
+
 	if totalDeleted > 0 {
 		// Vacuum database to reclaim space
 		if _, err := t.db.Exec("VACUUM"); err != nil {
 			log.Warn().Err(err).Msg("Failed to vacuum database after cleanup")
 		}
-		
+
 		log.Info().Int("total_deleted", totalDeleted).Int("retention_days", retentionDays).
 			Msg("Historical data cleanup completed")
 	}
-	
+
 	return nil
 }
 
@@ -756,7 +756,7 @@ func (t *Tracker) ResetData(babyUID string) (int, error) {
 
 	tables := []string{"sensor_readings", "events", "state_changes"}
 	totalDeleted := 0
-	
+
 	for _, table := range tables {
 		query := fmt.Sprintf("DELETE FROM %s WHERE baby_uid = ?", table)
 		result, err := t.db.Exec(query, babyUID)
@@ -764,23 +764,23 @@ func (t *Tracker) ResetData(babyUID string) (int, error) {
 			log.Error().Err(err).Str("table", table).Str("baby_uid", babyUID).Msg("Failed to reset data from table")
 			return totalDeleted, err
 		}
-		
+
 		if deleted, err := result.RowsAffected(); err == nil {
 			totalDeleted += int(deleted)
 			log.Debug().Str("table", table).Str("baby_uid", babyUID).Int64("deleted", deleted).Msg("Reset data from table")
 		}
 	}
-	
+
 	if totalDeleted > 0 {
 		// Vacuum database to reclaim space
 		if _, err := t.db.Exec("VACUUM"); err != nil {
 			log.Warn().Err(err).Msg("Failed to vacuum database after reset")
 		}
-		
+
 		log.Info().Str("baby_uid", babyUID).Int("total_deleted", totalDeleted).
 			Msg("Historical data reset completed")
 	}
-	
+
 	return totalDeleted, nil
 }
 

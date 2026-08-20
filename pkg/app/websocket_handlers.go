@@ -105,13 +105,13 @@ func sendLightCommand(nightLightState bool, conn *client.WebsocketConnection) {
 func processStandby(babyUID string, settings *client.Settings, stateManager *baby.StateManager) {
 	stateUpdate := baby.State{}
 	deviceInfo := &baby.DeviceInfo{}
-	
+
 	// Extract standby mode
 	if settings.SleepMode != nil {
 		stateUpdate.SetStandby(*settings.SleepMode)
 		deviceInfo.SleepMode = settings.SleepMode
 	}
-	
+
 	// Extract other device configuration
 	if settings.NightVision != nil {
 		deviceInfo.NightVision = settings.NightVision
@@ -155,7 +155,7 @@ func processStandby(babyUID string, settings *client.Settings, stateManager *bab
 		mountingMode := int32(*settings.MountingMode)
 		deviceInfo.MountingMode = &mountingMode
 	}
-	
+
 	// Extract sensor thresholds
 	for _, sensor := range settings.Sensors {
 		if sensor.SensorType != nil {
@@ -177,7 +177,7 @@ func processStandby(babyUID string, settings *client.Settings, stateManager *bab
 			}
 		}
 	}
-	
+
 	// Extract stream settings
 	for _, stream := range settings.Streams {
 		if stream.Id != nil {
@@ -206,15 +206,15 @@ func processStandby(babyUID string, settings *client.Settings, stateManager *bab
 			}
 		}
 	}
-	
+
 	// Set last updated timestamp
 	timestamp := time.Now().Unix()
 	deviceInfo.LastUpdated = &timestamp
-	
+
 	// Set device info in state
 	stateUpdate.DeviceInfo = deviceInfo
 	stateManager.Update(babyUID, stateUpdate)
-	
+
 	log.Debug().Str("baby_uid", babyUID).Interface("device_info", deviceInfo).Msg("Updated device info from settings")
 }
 
@@ -229,7 +229,7 @@ func sendStandbyCommand(standbyState bool, conn *client.WebsocketConnection) {
 func processStatus(babyUID string, status *client.Status, stateManager *baby.StateManager) {
 	stateUpdate := baby.State{}
 	deviceInfo := &baby.DeviceInfo{}
-	
+
 	// Extract device information from status
 	if status.CurrentVersion != nil {
 		deviceInfo.FirmwareVersion = status.CurrentVersion
@@ -254,14 +254,14 @@ func processStatus(babyUID string, status *client.Status, stateManager *baby.Sta
 	if status.UpgradeDownloaded != nil {
 		deviceInfo.UpgradeDownloaded = status.UpgradeDownloaded
 	}
-	
+
 	// Set last updated timestamp
 	timestamp := time.Now().Unix()
 	deviceInfo.LastUpdated = &timestamp
-	
+
 	// Set device info in state
 	stateUpdate.DeviceInfo = deviceInfo
 	stateManager.Update(babyUID, stateUpdate)
-	
+
 	log.Debug().Str("baby_uid", babyUID).Interface("device_info", deviceInfo).Msg("Updated device info from status")
 }

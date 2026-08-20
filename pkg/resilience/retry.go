@@ -32,7 +32,7 @@ func DefaultRetryConfig() RetryConfig {
 // RetryWithExponentialBackoff retries a function with exponential backoff
 func RetryWithExponentialBackoff(name string, config RetryConfig, fn func() error) error {
 	var lastErr error
-	
+
 	for attempt := 0; attempt <= config.MaxRetries; attempt++ {
 		if attempt > 0 {
 			delay := calculateDelay(attempt-1, config)
@@ -43,7 +43,7 @@ func RetryWithExponentialBackoff(name string, config RetryConfig, fn func() erro
 				Msg("Retrying operation after delay")
 			time.Sleep(delay)
 		}
-		
+
 		err := fn()
 		if err == nil {
 			if attempt > 0 {
@@ -54,14 +54,14 @@ func RetryWithExponentialBackoff(name string, config RetryConfig, fn func() erro
 			}
 			return nil
 		}
-		
+
 		lastErr = err
 		log.Debug().
 			Str("operation", name).
 			Int("attempt", attempt+1).
 			Err(err).
 			Msg("Operation failed")
-		
+
 		// Check if the error is retryable
 		if !isRetryableError(err, config.RetryableErrors) {
 			log.Debug().
@@ -71,31 +71,31 @@ func RetryWithExponentialBackoff(name string, config RetryConfig, fn func() erro
 			break
 		}
 	}
-	
+
 	log.Error().
 		Str("operation", name).
 		Int("max_attempts", config.MaxRetries+1).
 		Err(lastErr).
 		Msg("Operation failed after all retry attempts")
-	
+
 	return lastErr
 }
 
 // calculateDelay calculates the delay for the given attempt with exponential backoff
 func calculateDelay(attempt int, config RetryConfig) time.Duration {
 	delay := float64(config.InitialDelay) * math.Pow(config.BackoffFactor, float64(attempt))
-	
+
 	// Cap the delay at MaxDelay
 	if delay > float64(config.MaxDelay) {
 		delay = float64(config.MaxDelay)
 	}
-	
+
 	// Add jitter to prevent thundering herd
 	if config.Jitter {
 		jitter := rand.Float64() * 0.1 * delay // 10% jitter
 		delay += jitter
 	}
-	
+
 	return time.Duration(delay)
 }
 
@@ -105,14 +105,14 @@ func isRetryableError(err error, retryableErrors []string) bool {
 		// If no specific retryable errors are configured, retry all errors
 		return true
 	}
-	
+
 	errStr := err.Error()
 	for _, retryableErr := range retryableErrors {
 		if contains(errStr, retryableErr) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 

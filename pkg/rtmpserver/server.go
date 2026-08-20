@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/indiefan/home_assistant_nanit/pkg/baby"
 	"github.com/notedit/rtmp/format/rtmp"
 	"github.com/rs/zerolog/log"
-	"github.com/indiefan/home_assistant_nanit/pkg/baby"
 )
 
 type rtmpHandler struct {
@@ -155,4 +155,3 @@ func (s *rtmpHandler) closePublisher(babyUID string, b *broadcaster) {
 
 	b.closeSubscribers()
 }
-

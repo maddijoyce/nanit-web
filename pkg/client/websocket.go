@@ -6,11 +6,11 @@ import (
 	sync "sync"
 	"time"
 
-	"github.com/rs/zerolog/log"
-	"github.com/sacOO7/gowebsocket"
 	"github.com/indiefan/home_assistant_nanit/pkg/baby"
 	"github.com/indiefan/home_assistant_nanit/pkg/session"
 	"github.com/indiefan/home_assistant_nanit/pkg/utils"
+	"github.com/rs/zerolog/log"
+	"github.com/sacOO7/gowebsocket"
 	"google.golang.org/protobuf/proto"
 )
 

@@ -16,11 +16,11 @@ import (
 type StreamStatus string
 
 const (
-	StatusStarting        StreamStatus = "starting"
-	StatusConnecting      StreamStatus = "connecting"
-	StatusStreaming       StreamStatus = "streaming"
-	StatusError           StreamStatus = "error"
-	StatusStopped         StreamStatus = "stopped"
+	StatusStarting   StreamStatus = "starting"
+	StatusConnecting StreamStatus = "connecting"
+	StatusStreaming  StreamStatus = "streaming"
+	StatusError      StreamStatus = "error"
+	StatusStopped    StreamStatus = "stopped"
 )
 
 // StreamError represents different types of streaming errors
@@ -33,7 +33,7 @@ type StreamError struct {
 // Common error types
 const (
 	ErrorTypeRTMPConnection = "rtmp_connection"
-	ErrorTypeRTMPTimeout    = "rtmp_timeout" 
+	ErrorTypeRTMPTimeout    = "rtmp_timeout"
 	ErrorTypeFFmpegFailed   = "ffmpeg_failed"
 	ErrorTypeNetworkError   = "network_error"
 	ErrorTypeUnknown        = "unknown"
@@ -41,25 +41,25 @@ const (
 
 // HLSTranscoder manages FFmpeg processes for RTMP to HLS conversion
 type HLSTranscoder struct {
-	babyUID      string
-	rtmpURL      string
-	hlsDir       string
-	cmd          *exec.Cmd
-	mutex        sync.RWMutex
-	isRunning    bool
-	stopChan     chan struct{}
-	status       StreamStatus
-	lastError    *StreamError
-	startTime    time.Time
-	retryCount   int
-	maxRetries   int
-	retryDelay   time.Duration
+	babyUID    string
+	rtmpURL    string
+	hlsDir     string
+	cmd        *exec.Cmd
+	mutex      sync.RWMutex
+	isRunning  bool
+	stopChan   chan struct{}
+	status     StreamStatus
+	lastError  *StreamError
+	startTime  time.Time
+	retryCount int
+	maxRetries int
+	retryDelay time.Duration
 }
 
 // NewHLSTranscoder creates a new HLS transcoder for a baby
 func NewHLSTranscoder(babyUID, rtmpURL, baseHLSDir string) *HLSTranscoder {
 	hlsDir := filepath.Join(baseHLSDir, babyUID)
-	
+
 	return &HLSTranscoder{
 		babyUID:    babyUID,
 		rtmpURL:    rtmpURL,
@@ -101,17 +101,17 @@ func (h *HLSTranscoder) Start() error {
 	segmentPath := filepath.Join(h.hlsDir, "segment_%d.ts")
 
 	args := []string{
-		"-i", h.rtmpURL,                    // Input RTMP stream
-		"-c:v", "libx264",                  // Video codec
-		"-preset", "ultrafast",             // Fast encoding
-		"-tune", "zerolatency",             // Low latency
-		"-c:a", "aac",                      // Audio codec
-		"-f", "hls",                        // HLS format
-		"-hls_time", "2",                   // 2 second segments
-		"-hls_list_size", "5",              // Keep 5 segments in playlist
-		"-hls_flags", "delete_segments",    // Auto-delete old segments
+		"-i", h.rtmpURL, // Input RTMP stream
+		"-c:v", "libx264", // Video codec
+		"-preset", "ultrafast", // Fast encoding
+		"-tune", "zerolatency", // Low latency
+		"-c:a", "aac", // Audio codec
+		"-f", "hls", // HLS format
+		"-hls_time", "2", // 2 second segments
+		"-hls_list_size", "5", // Keep 5 segments in playlist
+		"-hls_flags", "delete_segments", // Auto-delete old segments
 		"-hls_segment_filename", segmentPath,
-		"-y",                               // Overwrite output
+		"-y", // Overwrite output
 		playlistPath,
 	}
 
@@ -199,7 +199,7 @@ func (h *HLSTranscoder) monitor() {
 	// Check if HLS files are being generated (indicates successful connection)
 	checkTicker := time.NewTicker(5 * time.Second)
 	defer checkTicker.Stop()
-	
+
 	connected := false
 	go func() {
 		for range checkTicker.C {
@@ -232,7 +232,7 @@ func (h *HLSTranscoder) monitor() {
 				Str("error_type", h.lastError.Type).
 				Int("retry_count", h.retryCount).
 				Msg("HLS transcoding process exited with error")
-			
+
 			// Attempt retry for connection issues
 			if h.shouldRetry() {
 				h.scheduleRetry()
@@ -276,10 +276,10 @@ func NewHLSManager(baseHLSDir string) *HLSManager {
 		baseHLSDir:  baseHLSDir,
 		stopCleanup: make(chan struct{}),
 	}
-	
+
 	// Start periodic cleanup of orphaned files
 	manager.startPeriodicCleanup()
-	
+
 	return manager
 }
 
@@ -343,7 +343,7 @@ func (m *HLSManager) StopAll() {
 // startPeriodicCleanup starts a background routine to clean up orphaned HLS files
 func (m *HLSManager) startPeriodicCleanup() {
 	m.cleanupTicker = time.NewTicker(30 * time.Minute) // Clean up every 30 minutes
-	
+
 	go func() {
 		for {
 			select {
@@ -359,7 +359,7 @@ func (m *HLSManager) startPeriodicCleanup() {
 // cleanupOrphanedFiles removes HLS files for babies that are no longer being transcoded
 func (m *HLSManager) cleanupOrphanedFiles() {
 	log.Debug().Msg("Starting periodic HLS cleanup")
-	
+
 	// Get list of all baby directories
 	pattern := filepath.Join(m.baseHLSDir, "*")
 	matches, err := filepath.Glob(pattern)
@@ -367,23 +367,23 @@ func (m *HLSManager) cleanupOrphanedFiles() {
 		log.Warn().Err(err).Msg("Failed to glob baby directories for cleanup")
 		return
 	}
-	
+
 	m.mutex.RLock()
 	activeTranscoders := make(map[string]bool)
 	for babyUID := range m.transcoders {
 		activeTranscoders[babyUID] = true
 	}
 	m.mutex.RUnlock()
-	
+
 	cleanedCount := 0
 	for _, dir := range matches {
 		babyUID := filepath.Base(dir)
-		
+
 		// Skip if transcoder is still active
 		if activeTranscoders[babyUID] {
 			continue
 		}
-		
+
 		// Check if directory has old files (older than 1 hour)
 		if m.hasOldFiles(dir, time.Hour) {
 			if err := os.RemoveAll(dir); err != nil {
@@ -394,7 +394,7 @@ func (m *HLSManager) cleanupOrphanedFiles() {
 			}
 		}
 	}
-	
+
 	if cleanedCount > 0 {
 		log.Info().Int("cleaned_count", cleanedCount).Msg("Completed HLS cleanup")
 	}
@@ -407,20 +407,20 @@ func (m *HLSManager) hasOldFiles(dir string, maxAge time.Duration) bool {
 	if err != nil {
 		return false
 	}
-	
+
 	cutoff := time.Now().Add(-maxAge)
-	
+
 	for _, file := range files {
 		info, err := os.Stat(file)
 		if err != nil {
 			continue
 		}
-		
+
 		if info.ModTime().Before(cutoff) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -438,20 +438,20 @@ func (h *HLSTranscoder) setError(errorType, message, code string) {
 func (h *HLSTranscoder) classifyAndSetError(err error) {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
-	
+
 	errStr := err.Error()
-	
+
 	// Check for common RTMP connection issues
-	if strings.Contains(errStr, "Connection refused") || 
-	   strings.Contains(errStr, "Connection reset") ||
-	   strings.Contains(errStr, "No route to host") {
+	if strings.Contains(errStr, "Connection refused") ||
+		strings.Contains(errStr, "Connection reset") ||
+		strings.Contains(errStr, "No route to host") {
 		h.setError(ErrorTypeRTMPConnection, "Cannot connect to RTMP server", errStr)
 	} else if strings.Contains(errStr, "Connection timed out") ||
-			  strings.Contains(errStr, "timeout") {
+		strings.Contains(errStr, "timeout") {
 		h.setError(ErrorTypeRTMPTimeout, "RTMP connection timed out", errStr)
 	} else if strings.Contains(errStr, "Server error") ||
-			  strings.Contains(errStr, "403") ||
-			  strings.Contains(errStr, "404") {
+		strings.Contains(errStr, "403") ||
+		strings.Contains(errStr, "404") {
 		h.setError(ErrorTypeRTMPConnection, "RTMP server rejected connection", errStr)
 	} else if strings.Contains(errStr, "exit status") {
 		// Check if we've been running long enough to classify as timeout
@@ -488,25 +488,25 @@ func (h *HLSTranscoder) GetStatus() (StreamStatus, *StreamError) {
 func (h *HLSTranscoder) GetDetailedInfo() map[string]interface{} {
 	h.mutex.RLock()
 	defer h.mutex.RUnlock()
-	
+
 	info := map[string]interface{}{
-		"baby_uid":     h.babyUID,
-		"status":       string(h.status),
-		"is_running":   h.isRunning,
-		"start_time":   h.startTime,
-		"retry_count":  h.retryCount,
-		"max_retries":  h.maxRetries,
+		"baby_uid":    h.babyUID,
+		"status":      string(h.status),
+		"is_running":  h.isRunning,
+		"start_time":  h.startTime,
+		"retry_count": h.retryCount,
+		"max_retries": h.maxRetries,
 	}
-	
+
 	if h.lastError != nil {
 		info["error"] = h.lastError
 	}
-	
+
 	if h.isRunning {
 		info["uptime"] = time.Since(h.startTime).Seconds()
 		info["has_files"] = h.hasHLSFiles()
 	}
-	
+
 	return info
 }
 
@@ -515,7 +515,7 @@ func (h *HLSTranscoder) shouldRetry() bool {
 	if h.retryCount >= h.maxRetries {
 		return false
 	}
-	
+
 	// Only retry for connection-related errors
 	if h.lastError != nil {
 		switch h.lastError.Type {
@@ -523,21 +523,21 @@ func (h *HLSTranscoder) shouldRetry() bool {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
 // scheduleRetry schedules a retry attempt after a delay
 func (h *HLSTranscoder) scheduleRetry() {
 	h.retryCount++
-	
+
 	log.Info().
 		Str("baby_uid", h.babyUID).
 		Int("retry_count", h.retryCount).
 		Int("max_retries", h.maxRetries).
 		Dur("retry_delay", h.retryDelay).
 		Msg("Scheduling HLS transcoding retry")
-	
+
 	go func() {
 		select {
 		case <-time.After(h.retryDelay):
@@ -547,18 +547,18 @@ func (h *HLSTranscoder) scheduleRetry() {
 				return
 			}
 			h.mutex.Unlock()
-			
+
 			log.Info().
 				Str("baby_uid", h.babyUID).
 				Int("retry_count", h.retryCount).
 				Msg("Retrying HLS transcoding")
-			
+
 			// Restart FFmpeg process
 			h.mutex.Lock()
 			h.status = StatusConnecting
 			h.lastError = nil
 			h.mutex.Unlock()
-			
+
 			// Build and start FFmpeg command again
 			if err := h.restartFFmpeg(); err != nil {
 				log.Error().
@@ -582,17 +582,17 @@ func (h *HLSTranscoder) restartFFmpeg() error {
 	segmentPath := filepath.Join(h.hlsDir, "segment_%d.ts")
 
 	args := []string{
-		"-i", h.rtmpURL,                    // Input RTMP stream
-		"-c:v", "libx264",                  // Video codec
-		"-preset", "ultrafast",             // Fast encoding
-		"-tune", "zerolatency",             // Low latency
-		"-c:a", "aac",                      // Audio codec
-		"-f", "hls",                        // HLS format
-		"-hls_time", "2",                   // 2 second segments
-		"-hls_list_size", "5",              // Keep 5 segments in playlist
-		"-hls_flags", "delete_segments",    // Auto-delete old segments
+		"-i", h.rtmpURL, // Input RTMP stream
+		"-c:v", "libx264", // Video codec
+		"-preset", "ultrafast", // Fast encoding
+		"-tune", "zerolatency", // Low latency
+		"-c:a", "aac", // Audio codec
+		"-f", "hls", // HLS format
+		"-hls_time", "2", // 2 second segments
+		"-hls_list_size", "5", // Keep 5 segments in playlist
+		"-hls_flags", "delete_segments", // Auto-delete old segments
 		"-hls_segment_filename", segmentPath,
-		"-y",                               // Overwrite output
+		"-y", // Overwrite output
 		playlistPath,
 	}
 

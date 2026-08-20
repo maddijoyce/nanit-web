@@ -10,31 +10,31 @@ type ErrorType string
 const (
 	// Authentication and authorization errors
 	ErrorTypeAuth ErrorType = "authentication"
-	
+
 	// Configuration and validation errors
 	ErrorTypeConfig ErrorType = "configuration"
-	
+
 	// Network and API communication errors
 	ErrorTypeNetwork ErrorType = "network"
-	
+
 	// File system and storage errors
 	ErrorTypeStorage ErrorType = "storage"
-	
+
 	// Business logic and validation errors
 	ErrorTypeValidation ErrorType = "validation"
-	
+
 	// External service errors (RTMP, MQTT, etc.)
 	ErrorTypeExternal ErrorType = "external_service"
 )
 
 // AppError represents a structured application error with context
 type AppError struct {
-	Type        ErrorType `json:"type"`
-	Code        string    `json:"code"`
-	Message     string    `json:"message"`
-	Cause       error     `json:"-"`
-	Context     map[string]interface{} `json:"context,omitempty"`
-	Retryable   bool      `json:"retryable"`
+	Type      ErrorType              `json:"type"`
+	Code      string                 `json:"code"`
+	Message   string                 `json:"message"`
+	Cause     error                  `json:"-"`
+	Context   map[string]interface{} `json:"context,omitempty"`
+	Retryable bool                   `json:"retryable"`
 }
 
 // Error implements the error interface

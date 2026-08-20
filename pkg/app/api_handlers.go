@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rs/zerolog/log"
 	"github.com/indiefan/home_assistant_nanit/pkg/baby"
 	"github.com/indiefan/home_assistant_nanit/pkg/session"
 	"github.com/indiefan/home_assistant_nanit/pkg/streaming"
+	"github.com/rs/zerolog/log"
 )
 
 // API handler for current status
@@ -31,16 +31,16 @@ func handleStatusAPI(w http.ResponseWriter, r *http.Request, babies []baby.Baby,
 	for _, b := range babies {
 		babyState := stateManager.GetBabyState(b.UID)
 		babyStatus := map[string]interface{}{
-			"uid":              b.UID,
-			"name":             b.Name,
-			"camera_uid":       b.CameraUID,
-			"temperature":      babyState.GetTemperature(),
-			"humidity":         babyState.GetHumidity(),
-			"is_night":         babyState.IsNight,
-			"night_light":      babyState.GetNightLight(),
-			"standby":          babyState.GetStandby(),
-			"websocket_alive":  babyState.GetIsWebsocketAlive(),
-			"stream_state":     babyState.GetStreamState(),
+			"uid":             b.UID,
+			"name":            b.Name,
+			"camera_uid":      b.CameraUID,
+			"temperature":     babyState.GetTemperature(),
+			"humidity":        babyState.GetHumidity(),
+			"is_night":        babyState.IsNight,
+			"night_light":     babyState.GetNightLight(),
+			"standby":         babyState.GetStandby(),
+			"websocket_alive": babyState.GetIsWebsocketAlive(),
+			"stream_state":    babyState.GetStreamState(),
 		}
 		status["babies"] = append(status["babies"].([]interface{}), babyStatus)
 	}
@@ -117,7 +117,7 @@ func handleControlAPI(w http.ResponseWriter, r *http.Request, controlType string
 		if requestData.Action == "toggle" {
 			newState := !currentState.GetNightLight()
 			sendLightCommand(newState, conn)
-			
+
 			log.Info().
 				Str("baby_uid", requestData.BabyUID).
 				Bool("new_state", newState).
@@ -131,7 +131,7 @@ func handleControlAPI(w http.ResponseWriter, r *http.Request, controlType string
 		if requestData.Action == "toggle" {
 			newState := !currentState.GetStandby()
 			sendStandbyCommand(newState, conn)
-			
+
 			log.Info().
 				Str("baby_uid", requestData.BabyUID).
 				Bool("new_state", newState).
@@ -161,7 +161,7 @@ func handleControlAPI(w http.ResponseWriter, r *http.Request, controlType string
 
 // DeviceAlert represents an error or warning for the device
 type DeviceAlert struct {
-	Type     string `json:"type"`     // "error" or "warning"
+	Type     string `json:"type"` // "error" or "warning"
 	Message  string `json:"message"`
 	Category string `json:"category"`
 }
@@ -303,7 +303,7 @@ func getStreamStateString(streamState *baby.StreamState) string {
 	if streamState == nil {
 		return "unknown"
 	}
-	
+
 	switch *streamState {
 	case baby.StreamState_Unknown:
 		return "unknown"
@@ -319,7 +319,7 @@ func getStreamStateString(streamState *baby.StreamState) string {
 // Authentication API handlers
 func handleAuthLoginAPI(w http.ResponseWriter, r *http.Request) {
 	log.Info().Msg("=== Starting login attempt ===")
-	
+
 	if r.Method != "POST" {
 		log.Warn().Str("method", r.Method).Msg("Invalid HTTP method for login")
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -353,19 +353,19 @@ func handleAuthLoginAPI(w http.ResponseWriter, r *http.Request) {
 
 	loginJSON, _ := json.Marshal(loginData)
 	log.Info().Str("payload", string(loginJSON)).Msg("Sending login request to Nanit API")
-	
+
 	req, err := http.NewRequest("POST", "https://api.nanit.com/login", strings.NewReader(string(loginJSON)))
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to create login request")
 		http.Error(w, "Failed to create request", http.StatusInternalServerError)
 		return
 	}
-	
+
 	// Add required headers (matching original rest.go)
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("nanit-api-version", "1")
 	log.Info().Msg("Added headers: Content-Type=application/json, nanit-api-version=1")
-	
+
 	client := &http.Client{Timeout: 30 * time.Second}
 	log.Info().Msg("Making HTTP request to Nanit API...")
 	response, err := client.Do(req)
@@ -416,7 +416,7 @@ func handleAuthLoginAPI(w http.ResponseWriter, r *http.Request) {
 
 func handleAuthVerify2FAAPI(w http.ResponseWriter, r *http.Request, app *App) {
 	log.Info().Msg("=== Starting 2FA verification ===")
-	
+
 	if r.Method != "POST" {
 		log.Warn().Str("method", r.Method).Msg("Invalid HTTP method for 2FA verification")
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -449,24 +449,24 @@ func handleAuthVerify2FAAPI(w http.ResponseWriter, r *http.Request, app *App) {
 		"mfa_code":  requestData.MFACode, // Already a string from JSON
 		"channel":   "email",
 	}
-	
+
 	log.Info().Str("mfa_code", requestData.MFACode).Msg("Sending 2FA verification request")
 
 	verifyJSON, _ := json.Marshal(verifyData)
 	log.Info().Str("payload", string(verifyJSON)).Msg("Sending verification request to Nanit API")
-	
+
 	req, err := http.NewRequest("POST", "https://api.nanit.com/login", strings.NewReader(string(verifyJSON)))
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to create verification request")
 		http.Error(w, "Failed to create request", http.StatusInternalServerError)
 		return
 	}
-	
+
 	// Add required headers (matching original)
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("nanit-api-version", "1")
 	log.Info().Msg("Added headers for verification: Content-Type=application/json, nanit-api-version=1")
-	
+
 	client := &http.Client{Timeout: 30 * time.Second}
 	log.Info().Msg("Making HTTP verification request to Nanit API...")
 	response, err := client.Do(req)
@@ -518,7 +518,7 @@ func handleAuthVerify2FAAPI(w http.ResponseWriter, r *http.Request, app *App) {
 
 	sessionJSON, _ := json.Marshal(sessionData)
 	sessionFile := app.Opts.SessionFile
-	
+
 	if err := os.WriteFile(sessionFile, sessionJSON, 0600); err != nil {
 		log.Error().Err(err).Str("file", sessionFile).Msg("Failed to save session file")
 		http.Error(w, "Failed to save authentication", http.StatusInternalServerError)
@@ -565,20 +565,20 @@ func handleAuthStatusAPI(w http.ResponseWriter, r *http.Request, app *App) {
 		if app.SessionStore != nil && app.SessionStore.Session != nil && app.SessionStore.Session.RefreshToken != "" {
 			isAuthenticated = true
 			message = "Authenticated"
-			
+
 			// Extract email from credentials if available
 			if app.RestClient != nil && app.RestClient.Email != "" {
 				email = app.RestClient.Email
 			}
-			
+
 			// Get auth time
 			if !app.SessionStore.Session.AuthTime.IsZero() {
 				authTime = &app.SessionStore.Session.AuthTime
 			}
-			
+
 			// Count babies
 			babiesCount = len(app.SessionStore.Session.Babies)
-			
+
 			// Check if services are running (at least one baby has active WebSocket)
 			if babiesCount > 0 {
 				for _, baby := range app.SessionStore.Session.Babies {
@@ -597,13 +597,13 @@ func handleAuthStatusAPI(w http.ResponseWriter, r *http.Request, app *App) {
 	}
 
 	result := map[string]interface{}{
-		"authenticated":     isAuthenticated,
-		"message":           message,
-		"email":             email,
-		"babies_count":      babiesCount,
-		"services_running":  servicesRunning,
+		"authenticated":    isAuthenticated,
+		"message":          message,
+		"email":            email,
+		"babies_count":     babiesCount,
+		"services_running": servicesRunning,
 	}
-	
+
 	if authTime != nil {
 		result["auth_time"] = authTime.Unix()
 	}
@@ -620,22 +620,22 @@ func handleAuthResetAPI(w http.ResponseWriter, r *http.Request, app *App) {
 
 	// Get session file path
 	sessionFile := app.Opts.SessionFile
-	
+
 	// Stop all monitoring services first
 	log.Info().Msg("Stopping monitoring services for authentication reset")
-	
+
 	// Stop HLS transcoding for all babies
 	if app.HLSManager != nil {
 		app.HLSManager.StopAll()
 		log.Info().Msg("Stopped all HLS transcoding")
 	}
-	
+
 	// Clear session store in memory
 	if app.SessionStore != nil {
 		app.SessionStore.Session = &session.Session{Revision: session.Revision}
 		log.Info().Msg("Cleared session store from memory")
 	}
-	
+
 	// Remove session file
 	if sessionFile != "" {
 		if err := os.Remove(sessionFile); err != nil {
@@ -648,21 +648,21 @@ func handleAuthResetAPI(w http.ResponseWriter, r *http.Request, app *App) {
 			log.Info().Str("file", sessionFile).Msg("Removed session file")
 		}
 	}
-	
+
 	// Clear REST client credentials
 	if app.RestClient != nil {
 		app.RestClient.RefreshToken = ""
 		app.RestClient.SessionStore = session.NewSessionStore()
 		log.Info().Msg("Cleared REST client credentials")
 	}
-	
+
 	log.Info().Msg("Authentication reset completed successfully")
-	
+
 	result := map[string]interface{}{
 		"success": true,
 		"message": "Authentication reset successfully. Please re-authenticate.",
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
 }
@@ -672,73 +672,73 @@ func handleHLSStreamAPI(w http.ResponseWriter, r *http.Request, app *App) {
 	// Extract baby UID from URL path: /api/stream/hls/{baby_uid}/playlist.m3u8
 	path := strings.TrimPrefix(r.URL.Path, "/api/stream/hls/")
 	parts := strings.Split(path, "/")
-	
+
 	if len(parts) < 2 {
 		http.Error(w, "Invalid stream path", http.StatusBadRequest)
 		return
 	}
-	
+
 	babyUID := parts[0]
 	fileName := parts[1]
-	
+
 	// Get transcoder for this baby
 	transcoder, exists := app.HLSManager.GetTranscoder(babyUID)
 	if !exists {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(map[string]string{
-			"error": "no_transcoder",
+			"error":   "no_transcoder",
 			"message": "No stream transcoder found for this baby",
 		})
 		return
 	}
-	
+
 	if !transcoder.IsRunning() {
 		// Get error details if available
 		status, streamError := transcoder.GetStatus()
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		
+
 		response := map[string]interface{}{
-			"error": "transcoder_not_running",
-			"status": string(status),
+			"error":   "transcoder_not_running",
+			"status":  string(status),
 			"message": "Stream transcoder is not running",
 		}
-		
+
 		if streamError != nil {
 			response["stream_error"] = streamError
 		}
-		
+
 		json.NewEncoder(w).Encode(response)
 		return
 	}
-	
+
 	// Serve the HLS file
 	filePath := filepath.Join(transcoder.GetHLSDir(), fileName)
-	
+
 	// Check if file exists
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		// Check transcoder status to provide better error info
 		status, streamError := transcoder.GetStatus()
-		
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		
+
 		response := map[string]interface{}{
-			"error": "file_not_found",
-			"status": string(status),
+			"error":   "file_not_found",
+			"status":  string(status),
 			"message": "HLS file not available yet",
-			"file": fileName,
+			"file":    fileName,
 		}
-		
+
 		if streamError != nil {
 			response["stream_error"] = streamError
 		}
-		
+
 		json.NewEncoder(w).Encode(response)
 		return
 	}
-	
+
 	// Set appropriate headers
 	if strings.HasSuffix(fileName, ".m3u8") {
 		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
@@ -747,11 +747,11 @@ func handleHLSStreamAPI(w http.ResponseWriter, r *http.Request, app *App) {
 		w.Header().Set("Content-Type", "video/mp2t")
 		w.Header().Set("Cache-Control", "max-age=3600")
 	}
-	
+
 	// Enable CORS for HLS
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET")
-	
+
 	// Serve the file
 	http.ServeFile(w, r, filePath)
 }
@@ -761,44 +761,44 @@ func handleStreamStartAPI(w http.ResponseWriter, r *http.Request, app *App) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	var requestData struct {
 		BabyUID string `json:"baby_uid"`
 	}
-	
+
 	if err := json.NewDecoder(r.Body).Decode(&requestData); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
-	
+
 	if requestData.BabyUID == "" {
 		http.Error(w, "baby_uid is required", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Build RTMP URL for this baby
 	rtmpURL := app.getLocalStreamURL(requestData.BabyUID)
 	if rtmpURL == "" {
 		http.Error(w, "RTMP not configured", http.StatusServiceUnavailable)
 		return
 	}
-	
+
 	// Start HLS transcoding
 	if err := app.HLSManager.StartTranscoding(requestData.BabyUID, rtmpURL); err != nil {
 		log.Error().Err(err).Str("baby_uid", requestData.BabyUID).Msg("Failed to start HLS transcoding")
 		http.Error(w, "Failed to start stream", http.StatusInternalServerError)
 		return
 	}
-	
+
 	log.Info().Str("baby_uid", requestData.BabyUID).Msg("HLS transcoding started")
-	
+
 	result := map[string]interface{}{
-		"success":      true,
-		"baby_uid":     requestData.BabyUID,
-		"hls_url":      fmt.Sprintf("/api/stream/hls/%s/playlist.m3u8", requestData.BabyUID),
-		"message":      "Stream started successfully",
+		"success":  true,
+		"baby_uid": requestData.BabyUID,
+		"hls_url":  fmt.Sprintf("/api/stream/hls/%s/playlist.m3u8", requestData.BabyUID),
+		"message":  "Stream started successfully",
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
 }
@@ -808,32 +808,32 @@ func handleStreamStopAPI(w http.ResponseWriter, r *http.Request, app *App) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	var requestData struct {
 		BabyUID string `json:"baby_uid"`
 	}
-	
+
 	if err := json.NewDecoder(r.Body).Decode(&requestData); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
-	
+
 	if requestData.BabyUID == "" {
 		http.Error(w, "baby_uid is required", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Stop HLS transcoding
 	app.HLSManager.StopTranscoding(requestData.BabyUID)
-	
+
 	log.Info().Str("baby_uid", requestData.BabyUID).Msg("HLS transcoding stopped")
-	
+
 	result := map[string]interface{}{
 		"success":  true,
 		"baby_uid": requestData.BabyUID,
 		"message":  "Stream stopped successfully",
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
 }
@@ -843,16 +843,16 @@ func handleStreamStatusAPI(w http.ResponseWriter, r *http.Request, app *App) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	// Extract baby UID from URL path: /api/stream/status/{baby_uid}
 	path := strings.TrimPrefix(r.URL.Path, "/api/stream/status/")
 	if path == "" {
 		http.Error(w, "baby_uid is required", http.StatusBadRequest)
 		return
 	}
-	
+
 	babyUID := path
-	
+
 	// Check for connection limit issues first
 	babyState := app.BabyStateManager.GetBabyState(babyUID)
 	if babyState.GetStreamRequestState() == baby.StreamRequestState_RequestFailed {
@@ -869,7 +869,7 @@ func handleStreamStatusAPI(w http.ResponseWriter, r *http.Request, app *App) {
 		json.NewEncoder(w).Encode(result)
 		return
 	}
-	
+
 	// Get transcoder for this baby
 	transcoder, exists := app.HLSManager.GetTranscoder(babyUID)
 	if !exists {
@@ -882,10 +882,10 @@ func handleStreamStatusAPI(w http.ResponseWriter, r *http.Request, app *App) {
 		json.NewEncoder(w).Encode(result)
 		return
 	}
-	
+
 	// Get detailed status information
 	info := transcoder.GetDetailedInfo()
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(info)
 }
@@ -896,40 +896,40 @@ func handleHistorySensorAPI(w http.ResponseWriter, r *http.Request, app *App) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	if !app.HistoryTracker.IsEnabled() {
 		http.Error(w, "Historical tracking disabled", http.StatusServiceUnavailable)
 		return
 	}
-	
+
 	// Extract baby UID from URL path: /api/history/sensor/{baby_uid}
 	path := strings.TrimPrefix(r.URL.Path, "/api/history/sensor/")
 	if path == "" {
 		http.Error(w, "baby_uid is required", http.StatusBadRequest)
 		return
 	}
-	
+
 	babyUID := path
-	
+
 	// Parse query parameters
 	query := r.URL.Query()
-	
+
 	// Default to last 24 hours if not specified
 	endTime := time.Now().Unix()
 	startTime := endTime - (24 * 60 * 60) // 24 hours ago
-	
+
 	if startStr := query.Get("start"); startStr != "" {
 		if parsedStart, err := parseTimeParam(startStr); err == nil {
 			startTime = parsedStart
 		}
 	}
-	
+
 	if endStr := query.Get("end"); endStr != "" {
 		if parsedEnd, err := parseTimeParam(endStr); err == nil {
 			endTime = parsedEnd
 		}
 	}
-	
+
 	// Use smart sampling based on timeframe duration
 	readings, err := app.HistoryTracker.GetSensorReadingsWithSampling(babyUID, startTime, endTime)
 	if err != nil {
@@ -937,7 +937,7 @@ func handleHistorySensorAPI(w http.ResponseWriter, r *http.Request, app *App) {
 		http.Error(w, "Failed to retrieve sensor data", http.StatusInternalServerError)
 		return
 	}
-	
+
 	response := map[string]interface{}{
 		"baby_uid":   babyUID,
 		"start_time": startTime,
@@ -945,7 +945,7 @@ func handleHistorySensorAPI(w http.ResponseWriter, r *http.Request, app *App) {
 		"readings":   readings,
 		"count":      len(readings),
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
@@ -955,53 +955,53 @@ func handleHistoryEventsAPI(w http.ResponseWriter, r *http.Request, app *App) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	if !app.HistoryTracker.IsEnabled() {
 		http.Error(w, "Historical tracking disabled", http.StatusServiceUnavailable)
 		return
 	}
-	
+
 	// Extract baby UID from URL path
 	path := strings.TrimPrefix(r.URL.Path, "/api/history/events/")
 	if path == "" {
 		http.Error(w, "baby_uid is required", http.StatusBadRequest)
 		return
 	}
-	
+
 	babyUID := path
-	
+
 	// Parse query parameters with defaults
 	query := r.URL.Query()
 	endTime := time.Now().Unix()
 	startTime := endTime - (24 * 60 * 60)
 	eventType := query.Get("type")
 	limit := 500
-	
+
 	if startStr := query.Get("start"); startStr != "" {
 		if parsedStart, err := parseTimeParam(startStr); err == nil {
 			startTime = parsedStart
 		}
 	}
-	
+
 	if endStr := query.Get("end"); endStr != "" {
 		if parsedEnd, err := parseTimeParam(endStr); err == nil {
 			endTime = parsedEnd
 		}
 	}
-	
+
 	if limitStr := query.Get("limit"); limitStr != "" {
 		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 && parsedLimit <= 5000 {
 			limit = parsedLimit
 		}
 	}
-	
+
 	events, err := app.HistoryTracker.GetEvents(babyUID, startTime, endTime, eventType, limit)
 	if err != nil {
 		log.Error().Err(err).Str("baby_uid", babyUID).Msg("Failed to get events")
 		http.Error(w, "Failed to retrieve event data", http.StatusInternalServerError)
 		return
 	}
-	
+
 	response := map[string]interface{}{
 		"baby_uid":   babyUID,
 		"start_time": startTime,
@@ -1010,7 +1010,7 @@ func handleHistoryEventsAPI(w http.ResponseWriter, r *http.Request, app *App) {
 		"events":     events,
 		"count":      len(events),
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
@@ -1020,45 +1020,45 @@ func handleHistorySummaryAPI(w http.ResponseWriter, r *http.Request, app *App) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	if !app.HistoryTracker.IsEnabled() {
 		http.Error(w, "Historical tracking disabled", http.StatusServiceUnavailable)
 		return
 	}
-	
+
 	// Extract baby UID from URL path
 	path := strings.TrimPrefix(r.URL.Path, "/api/history/summary/")
 	if path == "" {
 		http.Error(w, "baby_uid is required", http.StatusBadRequest)
 		return
 	}
-	
+
 	babyUID := path
-	
+
 	// Parse query parameters with defaults
 	query := r.URL.Query()
 	endTime := time.Now().Unix()
 	startTime := endTime - (24 * 60 * 60)
-	
+
 	if startStr := query.Get("start"); startStr != "" {
 		if parsedStart, err := parseTimeParam(startStr); err == nil {
 			startTime = parsedStart
 		}
 	}
-	
+
 	if endStr := query.Get("end"); endStr != "" {
 		if parsedEnd, err := parseTimeParam(endStr); err == nil {
 			endTime = parsedEnd
 		}
 	}
-	
+
 	summary, err := app.HistoryTracker.GetSummary(babyUID, startTime, endTime)
 	if err != nil {
 		log.Error().Err(err).Str("baby_uid", babyUID).Msg("Failed to get summary")
 		http.Error(w, "Failed to retrieve summary data", http.StatusInternalServerError)
 		return
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(summary)
 }
@@ -1068,52 +1068,52 @@ func handleHistoryDayNightAPI(w http.ResponseWriter, r *http.Request, app *App) 
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	if !app.HistoryTracker.IsEnabled() {
 		http.Error(w, "Historical tracking disabled", http.StatusServiceUnavailable)
 		return
 	}
-	
+
 	// Extract baby UID from URL path
 	path := strings.TrimPrefix(r.URL.Path, "/api/history/day-night/")
 	if path == "" {
 		http.Error(w, "baby_uid is required", http.StatusBadRequest)
 		return
 	}
-	
+
 	babyUID := path
-	
+
 	// Parse query parameters with defaults
 	query := r.URL.Query()
 	endTime := time.Now().Unix()
 	startTime := endTime - (24 * 60 * 60)
-	
+
 	if startStr := query.Get("start"); startStr != "" {
 		if parsedStart, err := parseTimeParam(startStr); err == nil {
 			startTime = parsedStart
 		}
 	}
-	
+
 	if endStr := query.Get("end"); endStr != "" {
 		if parsedEnd, err := parseTimeParam(endStr); err == nil {
 			endTime = parsedEnd
 		}
 	}
-	
+
 	dayNightData, err := app.HistoryTracker.GetDayNightAnalytics(babyUID, startTime, endTime)
 	if err != nil {
 		log.Error().Err(err).Str("baby_uid", babyUID).Msg("Failed to get day/night data")
 		http.Error(w, "Failed to retrieve day/night data", http.StatusInternalServerError)
 		return
 	}
-	
+
 	response := map[string]interface{}{
 		"baby_uid":   babyUID,
 		"start_time": startTime,
 		"end_time":   endTime,
 		"day_night":  dayNightData,
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
@@ -1123,36 +1123,36 @@ func handleHistoryResetAPI(w http.ResponseWriter, r *http.Request, app *App) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	if !app.HistoryTracker.IsEnabled() {
 		http.Error(w, "Historical tracking disabled", http.StatusServiceUnavailable)
 		return
 	}
-	
+
 	// Extract baby UID from URL path
 	path := strings.TrimPrefix(r.URL.Path, "/api/history/reset/")
 	if path == "" {
 		http.Error(w, "baby_uid is required", http.StatusBadRequest)
 		return
 	}
-	
+
 	babyUID := path
-	
+
 	_, err := app.HistoryTracker.ResetData(babyUID)
 	if err != nil {
 		log.Error().Err(err).Str("baby_uid", babyUID).Msg("Failed to reset history data")
 		http.Error(w, "Failed to reset history data", http.StatusInternalServerError)
 		return
 	}
-	
+
 	log.Info().Str("baby_uid", babyUID).Msg("History data reset successfully")
-	
+
 	response := map[string]interface{}{
 		"success":  true,
 		"baby_uid": babyUID,
 		"message":  "History data reset successfully",
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
@@ -1163,12 +1163,12 @@ func parseTimeParam(timeStr string) (int64, error) {
 	if timestamp, err := strconv.ParseInt(timeStr, 10, 64); err == nil {
 		return timestamp, nil
 	}
-	
+
 	// Try parsing as RFC3339 format
 	if t, err := time.Parse(time.RFC3339, timeStr); err == nil {
 		return t.Unix(), nil
 	}
-	
+
 	return 0, fmt.Errorf("invalid time format")
 }
 
@@ -1191,24 +1191,24 @@ func handleHealthAPI(w http.ResponseWriter, r *http.Request, app *App) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	// Extract baby UID from path
 	path := strings.TrimPrefix(r.URL.Path, "/api/health/")
 	babyUID := strings.TrimSuffix(path, "/")
-	
+
 	if babyUID == "" {
 		http.Error(w, "baby_uid is required", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Get baby state for WebSocket and RTMP status
 	babyState := app.BabyStateManager.GetBabyState(babyUID)
-	
+
 	// Get HLS transcoding status
 	var hlsStatus streaming.StreamStatus
 	var hlsError *streaming.StreamError
 	var hlsRunning bool
-	
+
 	if transcoder, exists := app.HLSManager.GetTranscoder(babyUID); exists {
 		hlsRunning = transcoder.IsRunning()
 		hlsStatus, hlsError = transcoder.GetStatus()
@@ -1216,13 +1216,13 @@ func handleHealthAPI(w http.ResponseWriter, r *http.Request, app *App) {
 		hlsStatus = streaming.StatusStopped
 		hlsRunning = false
 	}
-	
+
 	// Determine WebSocket status
 	websocketStatus := "disconnected"
 	if babyState.GetIsWebsocketAlive() {
 		websocketStatus = "connected"
 	}
-	
+
 	// Determine RTMP stream status using real video packet detection
 	rtmpStatus := "inactive"
 	if babyState.IsActivelyStreaming() {
@@ -1232,7 +1232,7 @@ func handleHealthAPI(w http.ResponseWriter, r *http.Request, app *App) {
 	} else if babyState.GetStreamState() == baby.StreamState_Unhealthy {
 		rtmpStatus = "unhealthy"
 	}
-	
+
 	// Determine HLS status string
 	hlsStatusStr := "stopped"
 	if hlsRunning {
@@ -1249,7 +1249,7 @@ func handleHealthAPI(w http.ResponseWriter, r *http.Request, app *App) {
 			hlsStatusStr = "unknown"
 		}
 	}
-	
+
 	// Calculate overall health
 	overallHealth := "unhealthy"
 	if websocketStatus == "connected" && rtmpStatus == "active" && hlsStatusStr == "streaming" {
@@ -1261,7 +1261,7 @@ func handleHealthAPI(w http.ResponseWriter, r *http.Request, app *App) {
 	} else if websocketStatus == "connected" || rtmpStatus == "active" || hlsRunning {
 		overallHealth = "starting"
 	}
-	
+
 	// Build detailed status
 	details := map[string]interface{}{
 		"websocket": map[string]interface{}{
@@ -1279,7 +1279,7 @@ func handleHealthAPI(w http.ResponseWriter, r *http.Request, app *App) {
 			"is_running": hlsRunning,
 		},
 	}
-	
+
 	// Add HLS error if present
 	if hlsError != nil {
 		details["hls"].(map[string]interface{})["error"] = map[string]interface{}{
@@ -1288,19 +1288,19 @@ func handleHealthAPI(w http.ResponseWriter, r *http.Request, app *App) {
 			"code":    hlsError.Code,
 		}
 	}
-	
+
 	response := map[string]interface{}{
 		"baby_uid":       babyUID,
 		"overall_health": overallHealth,
 		"details":        details,
 		"timestamp":      time.Now().Unix(),
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
 
-// Basic liveness check endpoint 
+// Basic liveness check endpoint
 func handleLivenessAPI(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -1336,7 +1336,7 @@ func handleReadinessAPI(w http.ResponseWriter, r *http.Request, app *App) {
 		authReady = true
 	}
 	readiness["services"].(map[string]interface{})["authentication"] = map[string]interface{}{
-		"ready":   authReady,
+		"ready": authReady,
 		"message": func() string {
 			if authReady {
 				return "Authentication configured"

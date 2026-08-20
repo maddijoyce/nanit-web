@@ -33,27 +33,27 @@ func (s CircuitState) String() string {
 
 // CircuitBreaker implements the circuit breaker pattern
 type CircuitBreaker struct {
-	name           string
-	state          CircuitState
-	failures       int
-	requests       int
-	lastFailTime   time.Time
-	mutex          sync.RWMutex
-	
+	name         string
+	state        CircuitState
+	failures     int
+	requests     int
+	lastFailTime time.Time
+	mutex        sync.RWMutex
+
 	// Configuration
-	maxFailures    int
-	timeout        time.Duration
-	resetTimeout   time.Duration
+	maxFailures  int
+	timeout      time.Duration
+	resetTimeout time.Duration
 }
 
 // NewCircuitBreaker creates a new circuit breaker
 func NewCircuitBreaker(name string, maxFailures int, timeout, resetTimeout time.Duration) *CircuitBreaker {
 	return &CircuitBreaker{
-		name:          name,
-		state:         StateClosed,
-		maxFailures:   maxFailures,
-		timeout:       timeout,
-		resetTimeout:  resetTimeout,
+		name:         name,
+		state:        StateClosed,
+		maxFailures:  maxFailures,
+		timeout:      timeout,
+		resetTimeout: resetTimeout,
 	}
 }
 
@@ -69,10 +69,10 @@ func (cb *CircuitBreaker) Execute(fn func() error) error {
 
 	// Execute the function
 	err := fn()
-	
+
 	// Record the result
 	cb.recordResult(err == nil)
-	
+
 	return err
 }
 
@@ -101,7 +101,7 @@ func (cb *CircuitBreaker) canExecute() bool {
 // recordResult records the success or failure of an operation
 func (cb *CircuitBreaker) recordResult(success bool) {
 	cb.requests++
-	
+
 	if success {
 		cb.onSuccess()
 	} else {
@@ -126,7 +126,7 @@ func (cb *CircuitBreaker) onSuccess() {
 func (cb *CircuitBreaker) onFailure() {
 	cb.failures++
 	cb.lastFailTime = time.Now()
-	
+
 	if cb.failures >= cb.maxFailures {
 		cb.trip()
 	}
@@ -159,7 +159,7 @@ func (cb *CircuitBreaker) GetState() CircuitState {
 func (cb *CircuitBreaker) GetStats() map[string]interface{} {
 	cb.mutex.RLock()
 	defer cb.mutex.RUnlock()
-	
+
 	return map[string]interface{}{
 		"name":           cb.name,
 		"state":          cb.state.String(),
