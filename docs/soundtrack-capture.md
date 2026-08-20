@@ -149,103 +149,96 @@ Nothing here does that: there is no ten-second timer anywhere in the code, and
 no path stops playback except an explicit command. The reconcile read happens at
 1.5s and the poll every 5 minutes. So the camera is ending it.
 
-#### It is probably looping, not a timer
+#### It is the clip ending, confirmed
 
-The app's sound list offers **30min**, **60min** and a **loop icon** per track —
-not a plain duration. That reframes the problem: the third option is repeat, not
-"infinite minutes".
+Stop times vary by track, measured against a Nanit Pro:
 
-Which suggests the ten seconds is simply **the length of the audio clip**. Told
-to play without any repeat instruction, the camera plays the file once through
-and stops. The app's three choices then read as "loop for 30 minutes", "loop for
-60 minutes", "loop forever".
+| Sound | Plays for |
+|---|---|
+| Birds | ~20s |
+| Wind | ~45s |
+| White Noise | ~50s |
 
-If that is right, the missing field is a loop or mode flag rather than a
-duration, and the fix may be as small as one boolean.
+These are clip lengths. The camera plays a file once through and stops. The
+app's per-track **30min / 60min / loop** choice is a repeat instruction, and
+without it the camera does exactly one pass.
 
-#### What the captures rule out, and what they do not
+#### The camera does the repeating, not the app
 
-Changing the timer in the app does **not** change the `GET_PLAYBACK` reply.
+Force-quitting the Nanit app leaves a looping sound playing. So the repeat is
+camera-side state, not the app re-issuing a play command each time a clip ends.
+Something tells the camera to keep going, and it remembers.
 
-That does not mean the field is absent from `PUT_PLAYBACK`. `GET_PLAYBACK`
-reports current playback state, and the camera may simply not echo the mode back
-— exactly as it never echoes a track change. So a loop flag on the play command
-remains entirely possible; it just cannot be found by reading playback state.
+#### Where it is not
 
-The per-track setting also persists across a force-quit of the app, so it is
-stored somewhere: on the camera, in Nanit's cloud, or in the app's own storage.
-All three are worth ruling in or out.
+`PUT_PLAYBACK` has been swept thoroughly and carries nothing else:
 
-#### The sharpest remaining test
+| Probe | Result | Reading |
+|---|---|---|
+| `Playback` tags 2, 5-8, bytes | 200, ignored | Not known fields |
+| `Playback` tags 9-16, varint | 200, ignored | Not known fields |
+| `Playback` tags 3, 4, bytes | Timeout | Known — the two Soundtrack messages |
+| `Soundtrack.type` = 1 | `Bad Request: User storage is not supported` | Storage location, not a mode |
+| `Soundtrack.type` = 2 | Timeout | Out of range for a small enum |
 
-The app currently has **Birds set to 30min** and the other three set to **loop**.
-If the camera stores that, `GET_SOUNDTRACKS` should now report Birds differently
-from the rest:
+That error message is worth keeping: `Soundtrack.type` says *where the file
+lives* — 0 for the camera's built-ins, 1 for user storage, which this model does
+not support. It is not the repeat mode, and the schema now says so.
 
-```bash
-curl -s -X POST http://localhost:8080/api/debug/get \
-  -H 'Content-Type: application/json' -d '{"type":"GET_SOUNDTRACKS"}' | jq
+Neither `GET_SOUNDTRACKS` nor `GET_PLAYBACK` reports the per-track setting, and
+`GET_PLAYBACK` looks identical whichever timer the app has set.
+
+#### Where to look next
+
+Two places remain untested.
+
+**1. Settings.** This is the prime suspect: camera-side, persistent, and never
+examined. An earlier `GET_SETTINGS` probe timed out, so nothing was learned from
+it. `processStandby` now logs any unmapped field on a Settings message at info
+level, and the startup `GET_SETTINGS` will trigger it. Restart the bridge and
+look for:
+
+```
+INF Settings carried unmapped fields baby_uid=... unknown_fields=[...]
 ```
 
-Every entry read `{type: 0, name: "..."}` when all four were on the same
-setting. If Birds now differs, `Soundtrack.type` is the mode field and the whole
-problem collapses to sending the right value. Change a track's setting in the
-app and re-run to confirm.
+`Settings` maps tags 2, 7-12, 15, 18 and 20, leaving 1, 3-6, 13, 14, 16, 17, 19
+and 21+ free — plenty of room for a soundtrack section. If a field appears,
+change a track's timer in the app and compare.
 
-#### If the camera does not store it
-
-Then the app sends the mode with the play command, and it has to be found by
-writing. Three things to try, in order:
-
-1. **`Soundtrack.type`.** It has been `0` in every capture, which would be the
-   default. Try other values:
+**2. Inside the Soundtrack message.** `Soundtrack` has only tags 1 and 2 in the
+schema and nothing has probed past them. A per-track setting belongs here rather
+than on `Playback`, which matches the app offering the choice per sound:
 
 ```bash
-curl -s -X POST http://localhost:8080/api/debug/playback \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"Wind.wav","soundtrack_type":1}' | jq
-```
-
-   Wait past fifteen seconds. Values 1, 2 and 3 map naturally onto 30min, 60min
-   and loop.
-
-2. **Unswept `Playback` tags.** Tags 2, 5, 6, 7 and 8 accepted bytes and ignored
-   them, so none is a varint. Tags 9 and above have never been tried:
-
-```bash
-for tag in 9 10 11 12 13 14 15 16; do
-  echo "--- tag $tag"
+for tag in 3 4 5 6; do
+  echo "--- soundtrack tag $tag"
   curl -s -X POST http://localhost:8080/api/debug/playback \
     -H 'Content-Type: application/json' \
-    -d "{\"name\":\"Wind.wav\",\"tag\":$tag,\"varint\":true,\"value\":1}" \
-    | jq -c '{tag,status:.status_code,msg:.status_message}'
-  sleep 15
+    -d "{\"name\":\"Birds.wav\",\"soundtrack_tag\":$tag,\"soundtrack_value\":1}" \
+    | jq -c '{status:.status_code,msg:.status_message,sent:.sent}'
+  sleep 30
   curl -s -X POST http://localhost:8080/api/debug/playback \
     -H 'Content-Type: application/json' -d '{"stop":true}' > /dev/null
 done
 ```
 
-   A timeout is a positive result: it means the tag exists with a different wire
-   type, which is how tags 3 and 4 were found.
+Birds is the shortest clip at ~20s, so 30 seconds per attempt makes surviving
+the end obvious. A timeout is a positive result — it means the tag exists with a
+different wire type.
 
-3. **Nanit's cloud.** If the setting is stored server-side it will show up in a
-   diff. Capture, change a track's timer in the app, capture again:
+Also worth trying `PUT_SETTINGS` and the request types this project has never
+called: `GET_UOM` (40) and `PUT_UOM` (41), and `GET_LOGS` (24), which might name
+the setting outright.
 
-```bash
-curl -s -X POST http://localhost:8080/api/debug/rest \
-  -H 'Content-Type: application/json' -d '{"path":"/babies"}' | jq -S . > before.json
-# change Birds from 30min to loop in the app, then
-curl -s -X POST http://localhost:8080/api/debug/rest \
-  -H 'Content-Type: application/json' -d '{"path":"/babies"}' | jq -S . > after.json
-diff before.json after.json
-```
+#### The fallback, if the camera cannot be told
 
-   Also worth trying `/babies/<uid>`, `/babies/<uid>/settings` and
-   `/babies/<uid>/soundtracks`.
-
-If all three come up empty, the setting lives in the app's own storage and the
-mode must still reach the camera somehow — in which case the play command is the
-only place left, and the tag sweep above is the way to find it.
+If no field turns up, the bridge could restart the track itself each time the
+camera reports a stop, using the confirmed-stop path that already exists. That
+was deliberately not built: the camera plainly can loop on its own, and a
+restart loop would fight anyone stopping the sound from the app, since a
+deliberate stop and a clip ending look identical on the wire. Worth revisiting
+only once the protocol route is exhausted.
 
 #### A note on ordering
 

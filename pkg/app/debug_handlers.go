@@ -131,6 +131,20 @@ type debugPlaybackRequest struct {
 	// SoundtrackType - the Soundtrack's own field 1, which has been 0 in every
 	// capture. Set it to probe what it means.
 	SoundtrackType int32 `json:"soundtrack_type,omitempty"`
+	// SoundtrackTag - protobuf field number for one extra field *inside* each
+	// Soundtrack message, rather than beside it on Playback.
+	//
+	// Soundtrack has only tags 1 and 2 in the schema, and nothing has probed
+	// beyond them. A per-track setting such as the repeat mode would sit here
+	// rather than on Playback, which matches the app offering the choice per
+	// sound.
+	SoundtrackTag int32 `json:"soundtrack_tag,omitempty"`
+	// SoundtrackValue - varint payload for SoundtrackTag
+	SoundtrackValue uint64 `json:"soundtrack_value,omitempty"`
+	// SoundtrackText - length-delimited payload for SoundtrackTag, used when
+	// SoundtrackValue is not set
+	SoundtrackText string `json:"soundtrack_text,omitempty"`
+
 	// Tag - protobuf field number for one extra field on Playback
 	Tag int32 `json:"tag,omitempty"`
 	// Value - varint payload for Tag. Used when UseVarint is set.
@@ -184,6 +198,16 @@ func handleDebugPlaybackAPI(w http.ResponseWriter, r *http.Request, babies []bab
 			if requestData.SoundtrackType != 0 {
 				playback.Soundtrack.Type = proto.Int32(requestData.SoundtrackType)
 				playback.SelectedSoundtrack.Type = proto.Int32(requestData.SoundtrackType)
+			}
+
+			if requestData.SoundtrackTag > 0 {
+				for _, entry := range []*client.Soundtrack{playback.Soundtrack, playback.SelectedSoundtrack} {
+					if requestData.SoundtrackText != "" {
+						client.SetUnknownBytesField(entry, requestData.SoundtrackTag, []byte(requestData.SoundtrackText))
+					} else {
+						client.SetUnknownVarintField(entry, requestData.SoundtrackTag, requestData.SoundtrackValue)
+					}
+				}
 			}
 		}
 

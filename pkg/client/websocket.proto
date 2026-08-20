@@ -208,7 +208,11 @@ message Playback {
 // ("White Noise.wav", "Birds.wav", "Waves.wav", "Wind.wav"). The name is the
 // identifier; there is no numeric id.
 message Soundtrack {
-  // type - 0 for every built-in sound observed; purpose otherwise unknown
+  // type - where the file is stored, not what it is. Confirmed by the camera
+  // answering "Bad Request: User storage is not supported" to type 1, and
+  // failing to parse type 2 at all, which reads as a small enum:
+  //   0 = built into the camera (every sound it reports)
+  //   1 = user storage, unsupported on this model
   optional int32 type = 1;
   optional string name = 2;
 }

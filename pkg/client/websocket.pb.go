@@ -1418,7 +1418,12 @@ func (x *Playback) GetSelectedSoundtrack() *Soundtrack {
 // identifier; there is no numeric id.
 type Soundtrack struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// type - 0 for every built-in sound observed; purpose otherwise unknown
+	// type - where the file is stored, not what it is. Confirmed by the camera
+	// answering "Bad Request: User storage is not supported" to type 1, and
+	// failing to parse type 2 at all, which reads as a small enum:
+	//
+	//	0 = built into the camera (every sound it reports)
+	//	1 = user storage, unsupported on this model
 	Type          *int32  `protobuf:"varint,1,opt,name=type" json:"type,omitempty"`
 	Name          *string `protobuf:"bytes,2,opt,name=name" json:"name,omitempty"`
 	unknownFields protoimpl.UnknownFields

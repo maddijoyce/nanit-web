@@ -105,6 +105,17 @@ func sendLightCommand(nightLightState bool, conn *client.WebsocketConnection) {
 }
 
 func processStandby(babyUID string, settings *client.Settings, stateManager *baby.StateManager) {
+	// Settings is the most likely home for anything the camera remembers but
+	// does not report elsewhere — the per-soundtrack repeat mode, for one. Any
+	// tag the schema cannot name is surfaced rather than silently dropped.
+	if unknown := client.DescribeUnknownFields(settings); len(unknown) > 0 {
+		log.Info().
+			Str("baby_uid", babyUID).
+			Interface("unknown_fields", unknown).
+			Str("raw", settings.String()).
+			Msg("Settings carried unmapped fields")
+	}
+
 	stateUpdate := baby.State{}
 	deviceInfo := &baby.DeviceInfo{}
 
@@ -267,6 +278,13 @@ func sendVolumeCommand(level int32, conn *client.WebsocketConnection) {
 }
 
 func processStatus(babyUID string, status *client.Status, stateManager *baby.StateManager) {
+	if unknown := client.DescribeUnknownFields(status); len(unknown) > 0 {
+		log.Info().
+			Str("baby_uid", babyUID).
+			Interface("unknown_fields", unknown).
+			Msg("Status carried unmapped fields")
+	}
+
 	stateUpdate := baby.State{}
 	deviceInfo := &baby.DeviceInfo{}
 
