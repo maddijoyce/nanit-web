@@ -416,8 +416,11 @@ func reconcilePlaybackState(babyUID string, conn *client.WebsocketConnection, st
 	}()
 }
 
-// processPlayback - reflects a playback state reported by the camera
-func processPlayback(babyUID string, playback *client.Playback, stateManager *baby.StateManager) {
+// processPlayback - reflects a playback state reported by the camera.
+//
+// source names where the report came from, so an unexpected stop can be traced
+// to the camera announcing it rather than to a read returning stale state.
+func processPlayback(babyUID string, playback *client.Playback, source string, stateManager *baby.StateManager) {
 	if playback == nil || playback.Status == nil {
 		return
 	}
@@ -428,7 +431,7 @@ func processPlayback(babyUID string, playback *client.Playback, stateManager *ba
 		stateUpdate.SetSoundtrack(baby.SoundtrackOffName)
 		stateManager.Update(babyUID, stateUpdate)
 
-		log.Debug().Str("baby_uid", babyUID).Msg("Camera reported soundtrack stopped")
+		log.Info().Str("baby_uid", babyUID).Str("source", source).Msg("Camera reported soundtrack stopped")
 		return
 	}
 
@@ -439,14 +442,14 @@ func processPlayback(babyUID string, playback *client.Playback, stateManager *ba
 		stateUpdate.SetSoundtrackPlaying(true)
 		stateManager.Update(babyUID, stateUpdate)
 
-		log.Debug().Str("baby_uid", babyUID).Msg("Camera reported playback started without naming a track")
+		log.Debug().Str("baby_uid", babyUID).Str("source", source).Msg("Camera reported playback started without naming a track")
 		return
 	}
 
 	stateUpdate.SetSoundtrack(name)
 	stateManager.Update(babyUID, stateUpdate)
 
-	log.Debug().Str("baby_uid", babyUID).Str("soundtrack", name).Msg("Camera reported soundtrack playing")
+	log.Debug().Str("baby_uid", babyUID).Str("source", source).Str("soundtrack", name).Msg("Camera reported soundtrack playing")
 }
 
 // requestPlaybackState - asks the camera what it is currently playing.
@@ -474,7 +477,7 @@ func requestPlaybackState(babyUID string, conn *client.WebsocketConnection, stat
 				Msg("GET_PLAYBACK response carried unmapped fields")
 		}
 
-		processPlayback(babyUID, res.GetPlayback(), stateManager)
+		processPlayback(babyUID, res.GetPlayback(), "get-playback", stateManager)
 	}()
 }
 
@@ -549,14 +552,22 @@ func processSoundtracksResponse(babyUID string, res *client.Response, stateManag
 	stateManager.Update(babyUID, stateUpdate)
 }
 
-// resumeSoundtrackName - the track to start when playback is switched on
-// without naming one: whatever played last, else the camera's first sound
+// resumeSoundtrackName - the track to start when playback is switched on without
+// naming one: the last one chosen, else the camera's first sound
 func resumeSoundtrackName(state *baby.State) string {
-	if current := state.GetSoundtrackName(); current != "" && current != baby.SoundtrackOffName {
-		return current
+	catalog := state.GetAvailableSoundtracks()
+
+	// SoundtrackName is "Off" once stopped, so the remembered selection is what
+	// answers "what was playing".
+	if selected := state.GetSelectedSoundtrack(); selected != "" {
+		for _, entry := range catalog {
+			if entry.Name == selected {
+				return selected
+			}
+		}
 	}
 
-	if catalog := state.GetAvailableSoundtracks(); len(catalog) > 0 {
+	if len(catalog) > 0 {
 		return catalog[0].Name
 	}
 

@@ -119,6 +119,11 @@ type State struct {
 	// display names and a state outside that list is discarded.
 	SoundtrackDisplayName *string
 	SoundtrackPlaying     *bool
+	// SelectedSoundtrack - the track chosen most recently, kept across stops so
+	// switching playback back on resumes it instead of restarting at the first
+	// sound in the catalog. SoundtrackName becomes "Off" when playback stops and
+	// so cannot answer "what was playing".
+	SelectedSoundtrack *string
 
 	// Device information cache
 	DeviceInfo *DeviceInfo `internal:"true"`
@@ -488,6 +493,13 @@ func (s *State) SetSoundtrack(name string) *State {
 	playing := !strings.EqualFold(name, SoundtrackOffName)
 	s.SoundtrackPlaying = &playing
 
+	// Remember the choice, but never record "Off" as a selection: the point of
+	// this field is to survive a stop.
+	if playing {
+		selected := name
+		s.SelectedSoundtrack = &selected
+	}
+
 	return s
 }
 
@@ -503,6 +515,16 @@ func (s *State) SetSoundtrackPlaying(playing bool) *State {
 	}
 
 	return s
+}
+
+// GetSelectedSoundtrack - the track most recently chosen, whether or not it is
+// playing now. Empty when nothing has been chosen yet.
+func (s *State) GetSelectedSoundtrack() string {
+	if s.SelectedSoundtrack != nil {
+		return *s.SelectedSoundtrack
+	}
+
+	return ""
 }
 
 // GetSoundtrackDisplayName - safely returns the active soundtrack's display name

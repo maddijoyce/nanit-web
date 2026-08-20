@@ -50,7 +50,7 @@ func TestProcessPlaybackStopped(t *testing.T) {
 
 	processPlayback("baby1", &client.Playback{
 		Status: client.Playback_STOPPED.Enum(),
-	}, stateManager)
+	}, "test", stateManager)
 
 	state := stateManager.GetBabyState("baby1")
 	assert.False(t, state.GetSoundtrackPlaying())
@@ -66,7 +66,7 @@ func TestProcessPlaybackStartedWithName(t *testing.T) {
 		Status:             client.Playback_STARTED.Enum(),
 		Soundtrack:         client.NewSoundtrackMessage("Birds.wav"),
 		SelectedSoundtrack: client.NewSoundtrackMessage("Birds.wav"),
-	}, stateManager)
+	}, "test", stateManager)
 
 	state := stateManager.GetBabyState("baby1")
 	assert.True(t, state.GetSoundtrackPlaying())
@@ -81,7 +81,7 @@ func TestProcessPlaybackFallsBackToSelectedSoundtrack(t *testing.T) {
 	processPlayback("baby1", &client.Playback{
 		Status:             client.Playback_STARTED.Enum(),
 		SelectedSoundtrack: client.NewSoundtrackMessage("Waves.wav"),
-	}, stateManager)
+	}, "test", stateManager)
 
 	assert.Equal(t, "Waves.wav", stateManager.GetBabyState("baby1").GetSoundtrackName())
 }
@@ -93,7 +93,7 @@ func TestProcessPlaybackStartedWithoutNameKeepsLastKnown(t *testing.T) {
 
 	processPlayback("baby1", &client.Playback{
 		Status: client.Playback_STARTED.Enum(),
-	}, stateManager)
+	}, "test", stateManager)
 
 	state := stateManager.GetBabyState("baby1")
 	assert.True(t, state.GetSoundtrackPlaying())
@@ -105,21 +105,30 @@ func TestResumeSoundtrackName(t *testing.T) {
 	empty := baby.NewState()
 	assert.Equal(t, "", resumeSoundtrackName(empty))
 
-	// Catalog but nothing played yet -> first sound
-	withCatalog := baby.NewState()
-	withCatalog.DeviceInfo = &baby.DeviceInfo{AvailableSoundtracks: []baby.Soundtrack{
+	// Catalog but nothing chosen yet -> first sound
+	state := baby.NewState()
+	state.DeviceInfo = &baby.DeviceInfo{AvailableSoundtracks: []baby.Soundtrack{
 		baby.NewSoundtrack("White Noise.wav"),
 		baby.NewSoundtrack("Birds.wav"),
 	}}
-	assert.Equal(t, "White Noise.wav", resumeSoundtrackName(withCatalog))
+	assert.Equal(t, "White Noise.wav", resumeSoundtrackName(state))
 
-	// Something played before -> resume it
-	withCatalog.SetSoundtrack("Birds.wav")
-	assert.Equal(t, "Birds.wav", resumeSoundtrackName(withCatalog))
+	// Something chosen -> resume it
+	state.SetSoundtrack("Birds.wav")
+	assert.Equal(t, "Birds.wav", resumeSoundtrackName(state))
 
-	// Stopped -> fall back to the first sound again
-	withCatalog.SetSoundtrack(baby.SoundtrackOffName)
-	assert.Equal(t, "White Noise.wav", resumeSoundtrackName(withCatalog))
+	// Still resumed after a stop. SoundtrackName is "Off" by now, so this is
+	// what stops the switch restarting at the first sound in the catalog.
+	state.SetSoundtrack(baby.SoundtrackOffName)
+	assert.Equal(t, baby.SoundtrackOffName, state.GetSoundtrackName())
+	assert.Equal(t, "Birds.wav", resumeSoundtrackName(state),
+		"Turning playback back on should resume the last chosen track")
+
+	// A remembered track the camera no longer lists falls back to the catalog
+	state.DeviceInfo = &baby.DeviceInfo{AvailableSoundtracks: []baby.Soundtrack{
+		baby.NewSoundtrack("Waves.wav"),
+	}}
+	assert.Equal(t, "Waves.wav", resumeSoundtrackName(state))
 }
 
 func TestSendSoundCommandRequiresConnection(t *testing.T) {

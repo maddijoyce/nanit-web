@@ -279,3 +279,28 @@ func TestSoundtrackSelectStateWhenStopped(t *testing.T) {
 	assert.Equal(t, baby.SoundtrackOffName, state.GetSoundtrackDisplayName())
 	assert.Equal(t, baby.SoundtrackOffName, state.AsMap(false)["soundtrack_display_name"])
 }
+
+// The switch must resume the last chosen track rather than restarting at the
+// first sound in the catalog. SoundtrackName reads "Off" once stopped, so this
+// relies on the remembered selection.
+func TestSoundtrackSwitchResumesLastSelection(t *testing.T) {
+	conn := testConnection()
+	conn.StateManager = baby.NewStateManager()
+	conn.StateManager.Update("baby1", *baby.NewState().SetDeviceInfo(&baby.DeviceInfo{
+		AvailableSoundtracks: []baby.Soundtrack{
+			baby.NewSoundtrack("White Noise.wav"),
+			baby.NewSoundtrack("Wind.wav"),
+		},
+	}))
+
+	// With nothing chosen, the first sound is the only sensible default
+	assert.Equal(t, "White Noise.wav", conn.resolveSoundtrackSwitch("baby1", true))
+
+	// Choose Wind, then stop
+	conn.StateManager.Update("baby1", *baby.NewState().SetSoundtrack("Wind.wav"))
+	conn.StateManager.Update("baby1", *baby.NewState().SetSoundtrack(baby.SoundtrackOffName))
+
+	assert.Equal(t, "Wind.wav", conn.resolveSoundtrackSwitch("baby1", true),
+		"Switching back on should resume Wind, not restart at White Noise")
+	assert.Equal(t, baby.SoundtrackOffName, conn.resolveSoundtrackSwitch("baby1", false))
+}

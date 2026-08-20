@@ -329,16 +329,19 @@ func (conn *Connection) resolveSoundtrackSwitch(babyUID string, enabled bool) st
 	}
 
 	state := conn.StateManager.GetBabyState(babyUID)
-	if current := state.GetSoundtrackName(); current != "" && !strings.EqualFold(current, baby.SoundtrackOffName) {
-		// Only resume a name the camera would recognise
-		for _, entry := range state.GetAvailableSoundtracks() {
-			if entry.Name == current {
-				return current
+	catalog := state.GetAvailableSoundtracks()
+
+	// Resume the last chosen track. SoundtrackName is "Off" once playback stops,
+	// so it cannot answer this; SelectedSoundtrack survives the stop.
+	if selected := state.GetSelectedSoundtrack(); selected != "" {
+		for _, entry := range catalog {
+			if entry.Name == selected {
+				return selected
 			}
 		}
 	}
 
-	if catalog := state.GetAvailableSoundtracks(); len(catalog) > 0 {
+	if len(catalog) > 0 {
 		return catalog[0].Name
 	}
 
