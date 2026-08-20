@@ -256,8 +256,15 @@ func (app *App) runWebsocket(babyUID string, conn *client.WebsocketConnection, c
 			} else if *m.Request.Type == client.RequestType_PUT_SETTINGS && m.Request.Settings != nil {
 				processStandby(babyUID, m.Request.Settings, app.BabyStateManager)
 			} else if *m.Request.Type == client.RequestType_PUT_PLAYBACK && m.Request.Playback != nil {
-				// The camera broadcasts a playback stop to every connected session
-				processPlayback(babyUID, m.Request.Playback, "camera-broadcast", app.BabyStateManager)
+				// The camera broadcasts playback changes to every connected
+				// session, but announces a stop even when it is only switching
+				// tracks, so a stop is confirmed by reading rather than applied.
+				verifyPlaybackState(babyUID, m.Request.Playback, app.BabyStateManager, func() {
+					go func() {
+						time.Sleep(playbackVerifyDelay)
+						requestPlaybackState(babyUID, conn, app.BabyStateManager)
+					}()
+				})
 			}
 		}
 	})

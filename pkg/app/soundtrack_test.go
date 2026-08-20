@@ -182,3 +182,79 @@ func TestSetSoundtrackPlayingFalseResetsName(t *testing.T) {
 	assert.False(t, state.GetSoundtrackPlaying())
 	assert.Equal(t, baby.SoundtrackOffName, state.GetSoundtrackName())
 }
+
+// A stop announced by the camera must not be applied directly. The camera
+// announces one while switching tracks, which flipped the Home Assistant switch
+// off and straight back on after every command.
+func TestBroadcastStopIsConfirmedNotApplied(t *testing.T) {
+	stateManager := baby.NewStateManager()
+	stateManager.Update("baby1", *baby.NewState().SetSoundtrack("Wind.wav"))
+
+	reread := 0
+	verifyPlaybackState("baby1", &client.Playback{
+		Status: client.Playback_STOPPED.Enum(),
+	}, stateManager, func() { reread++ })
+
+	assert.Equal(t, 1, reread, "a stop should trigger a confirming read")
+
+	// State must be untouched until that read comes back
+	state := stateManager.GetBabyState("baby1")
+	assert.True(t, state.GetSoundtrackPlaying(), "a broadcast stop must not flip state on its own")
+	assert.Equal(t, "Wind.wav", state.GetSoundtrackName())
+}
+
+// A start is unambiguous and applies immediately
+func TestBroadcastStartAppliesImmediately(t *testing.T) {
+	stateManager := baby.NewStateManager()
+
+	reread := 0
+	verifyPlaybackState("baby1", &client.Playback{
+		Status:     client.Playback_STARTED.Enum(),
+		Soundtrack: client.NewSoundtrackMessage("Birds.wav"),
+	}, stateManager, func() { reread++ })
+
+	assert.Equal(t, 0, reread, "a start needs no confirmation")
+
+	state := stateManager.GetBabyState("baby1")
+	assert.True(t, state.GetSoundtrackPlaying())
+	assert.Equal(t, "Birds.wav", state.GetSoundtrackName())
+}
+
+// A confirming read that really does report stopped still turns things off
+func TestConfirmedStopTurnsPlaybackOff(t *testing.T) {
+	stateManager := baby.NewStateManager()
+	stateManager.Update("baby1", *baby.NewState().SetSoundtrack("Wind.wav"))
+
+	verifyPlaybackState("baby1", &client.Playback{
+		Status: client.Playback_STOPPED.Enum(),
+	}, stateManager, func() {
+		// What requestPlaybackState does once GET_PLAYBACK answers
+		processPlayback("baby1", &client.Playback{
+			Status: client.Playback_STOPPED.Enum(),
+		}, "get-playback", stateManager)
+	})
+
+	state := stateManager.GetBabyState("baby1")
+	assert.False(t, state.GetSoundtrackPlaying())
+	assert.Equal(t, baby.SoundtrackOffName, state.GetSoundtrackName())
+}
+
+// A transitional stop followed by a read showing the new track must leave
+// playback on, which is the flap this prevents
+func TestTransitionalStopKeepsPlaybackOn(t *testing.T) {
+	stateManager := baby.NewStateManager()
+	stateManager.Update("baby1", *baby.NewState().SetSoundtrack("Wind.wav"))
+
+	verifyPlaybackState("baby1", &client.Playback{
+		Status: client.Playback_STOPPED.Enum(),
+	}, stateManager, func() {
+		processPlayback("baby1", &client.Playback{
+			Status:     client.Playback_STARTED.Enum(),
+			Soundtrack: client.NewSoundtrackMessage("Birds.wav"),
+		}, "get-playback", stateManager)
+	})
+
+	state := stateManager.GetBabyState("baby1")
+	assert.True(t, state.GetSoundtrackPlaying(), "switching tracks must not read as a stop")
+	assert.Equal(t, "Birds.wav", state.GetSoundtrackName())
+}

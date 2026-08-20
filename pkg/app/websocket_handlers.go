@@ -416,6 +416,37 @@ func reconcilePlaybackState(babyUID string, conn *client.WebsocketConnection, st
 	}()
 }
 
+// playbackVerifyDelay - how long to let a transition settle before confirming a
+// stop the camera announced
+const playbackVerifyDelay = 500 * time.Millisecond
+
+// verifyPlaybackState - handles a playback state broadcast by the camera.
+//
+// A start is taken at face value. A stop is not: the camera announces one while
+// switching tracks, so applying it directly made a command flip the Home
+// Assistant switch off and back on. Instead the stop triggers a re-read, and
+// GET_PLAYBACK decides — it reports STOPPED if playback really ended, and the
+// new track if the camera was only changing over.
+//
+// reread performs the confirmation, injected so the decision can be tested
+// without timing.
+func verifyPlaybackState(babyUID string, playback *client.Playback, stateManager *baby.StateManager, reread func()) {
+	if playback == nil || playback.Status == nil {
+		return
+	}
+
+	if *playback.Status != client.Playback_STOPPED {
+		processPlayback(babyUID, playback, "camera-broadcast", stateManager)
+		return
+	}
+
+	log.Debug().
+		Str("baby_uid", babyUID).
+		Msg("Camera announced a playback stop, confirming with a read before applying it")
+
+	reread()
+}
+
 // processPlayback - reflects a playback state reported by the camera.
 //
 // source names where the report came from, so an unexpected stop can be traced
