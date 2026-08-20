@@ -30,12 +30,15 @@ type StreamError struct {
 	Code    string `json:"code"`
 }
 
-// HLS tuning. Segments can only be cut on a keyframe, so the encoder is told to
-// emit one exactly every hlsSegmentSeconds. Without that, libx264 keeps its
-// default 250-frame GOP and the muxer has to run each segment on to the next
-// keyframe - roughly 15 seconds at the cam's frame rate - which the player then
-// buffers several of before it starts. That is where the bulk of the observed
-// latency came from.
+// HLS tuning. The cam publishes H.264 Main at 1080p10 with a keyframe every
+// second, and AAC-LC audio, so both streams are remuxed into HLS as-is - no
+// transcoding at all. Segments can only be cut on a keyframe, and with one
+// available every second any whole number of seconds here comes out exact.
+//
+// Player latency is roughly hlsSegmentSeconds x 3, since players start that
+// many segments behind the live edge. Dropping to 1 halves the delay again at
+// the cost of twice the segment requests, and some players are unhappy with
+// sub-2s target durations.
 const (
 	hlsSegmentSeconds = 2
 	hlsPlaylistSize   = 5
@@ -114,22 +117,17 @@ func (h *HLSTranscoder) Start() error {
 	args := []string{
 		// Input: read straight through rather than filling a buffer first
 		"-fflags", "nobuffer",
-		"-flags", "low_delay",
 		"-analyzeduration", "1000000", // 1s, enough to detect the streams
 		"-probesize", "1000000",
 		"-i", h.rtmpURL, // Input RTMP stream
-		"-c:v", "libx264", // Video codec
-		"-preset", "ultrafast", // Fast encoding
-		"-tune", "zerolatency", // Low latency
-		// One keyframe per segment, so segments actually come out
-		// hlsSegmentSeconds long (see the note on hlsSegmentSeconds)
-		"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", hlsSegmentSeconds),
-		"-sc_threshold", "0", // No extra keyframes on scene changes
-		"-c:a", "copy", // Cam already sends AAC-LC, no need to re-encode
+		// Remux only. The cam's H.264/AAC is already what HLS wants, so
+		// re-encoding would only add CPU load, latency and quality loss.
+		"-c:v", "copy",
+		"-c:a", "copy",
 		"-f", "hls", // HLS format
 		"-hls_time", fmt.Sprintf("%d", hlsSegmentSeconds),
 		"-hls_list_size", fmt.Sprintf("%d", hlsPlaylistSize),
-		// Auto-delete old segments; every segment now starts on a keyframe
+		// Auto-delete old segments; every segment starts on a keyframe
 		"-hls_flags", "delete_segments+independent_segments",
 		"-hls_segment_filename", segmentPath,
 		"-muxdelay", "0",

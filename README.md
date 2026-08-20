@@ -7,7 +7,7 @@ A comprehensive Go application that bridges Nanit baby monitors with Home Assist
 - **🏠 Home Assistant Integration**: RTMP streaming and MQTT auto-discovery
 - **🌐 Web Dashboard**: React-based real-time monitoring with interactive charts
 - **📊 Historical Data**: SQLite-powered tracking of temperature, humidity, and day/night status
-- **🎥 Video Streaming**: HLS transcoding for browser-based video playback
+- **🎥 Video Streaming**: HLS remuxing for browser-based video playback
 - **🔐 2FA Authentication**: Support for Nanit's required two-factor authentication
 - **📱 Real-time Updates**: Live sensor data and device control
 - **🔒 Optional Web Protection**: Password-protected dashboard access
