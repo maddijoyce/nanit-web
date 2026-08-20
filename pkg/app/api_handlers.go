@@ -75,9 +75,10 @@ func handleControlAPI(w http.ResponseWriter, r *http.Request, controlType string
 	}
 
 	var requestData struct {
-		BabyUID string `json:"baby_uid"`
-		Action  string `json:"action"`
-		Value   *int32 `json:"value,omitempty"`
+		BabyUID string  `json:"baby_uid"`
+		Action  string  `json:"action"`
+		Value   *int32  `json:"value,omitempty"`
+		Name    *string `json:"name,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&requestData); err != nil {
@@ -163,37 +164,44 @@ func handleControlAPI(w http.ResponseWriter, r *http.Request, controlType string
 		}
 
 	case "soundtrack":
-		if requestData.Action == "set" {
-			if requestData.Value == nil {
-				http.Error(w, "value is required for soundtrack set", http.StatusBadRequest)
+		switch requestData.Action {
+		case "set":
+			if requestData.Name == nil {
+				http.Error(w, "name is required for soundtrack set", http.StatusBadRequest)
 				return
 			}
 
-			if err := sendSoundCommand(*requestData.Value, conn); err != nil {
-				http.Error(w, err.Error(), http.StatusNotImplemented)
+			if err := sendSoundCommand(*requestData.Name, conn); err != nil {
+				http.Error(w, err.Error(), http.StatusServiceUnavailable)
 				return
 			}
 
 			log.Info().
 				Str("baby_uid", requestData.BabyUID).
-				Int32("value", *requestData.Value).
+				Str("name", *requestData.Name).
 				Msg("Soundtrack command sent")
-		} else if requestData.Action == "toggle" {
-			newState := baby.SoundtrackOff
+
+		case "toggle":
+			newState := baby.SoundtrackOffName
 			if !currentState.GetSoundtrackPlaying() {
-				newState = resumeSoundtrackID(currentState)
+				newState = resumeSoundtrackName(currentState)
+				if newState == "" {
+					http.Error(w, "No soundtracks known for this camera yet", http.StatusServiceUnavailable)
+					return
+				}
 			}
 
 			if err := sendSoundCommand(newState, conn); err != nil {
-				http.Error(w, err.Error(), http.StatusNotImplemented)
+				http.Error(w, err.Error(), http.StatusServiceUnavailable)
 				return
 			}
 
 			log.Info().
 				Str("baby_uid", requestData.BabyUID).
-				Int32("new_state", newState).
+				Str("new_state", newState).
 				Msg("Soundtrack toggle command sent")
-		} else {
+
+		default:
 			http.Error(w, "Invalid action for soundtrack", http.StatusBadRequest)
 			return
 		}

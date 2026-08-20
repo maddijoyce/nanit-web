@@ -194,6 +194,22 @@ message Playback {
   }
 
   required Status status = 1;
+
+  // The track to play is carried on this message but its field number is not
+  // confirmed. See soundtrackNameFieldTag in pkg/app/websocket_handlers.go and
+  // SOUNDTRACK_CAPTURE.md; it is written as an unknown field until verified,
+  // so no regeneration is needed to try a different tag.
+}
+
+// Soundtrack - a sound built into the camera, as listed by GET_SOUNDTRACKS.
+//
+// Observed on a Nanit Pro: four entries, each with type 0 and a filename
+// ("White Noise.wav", "Birds.wav", "Waves.wav", "Wind.wav"). The name is the
+// identifier; there is no numeric id.
+message Soundtrack {
+  // type - 0 for every built-in sound observed; purpose otherwise unknown
+  optional int32 type = 1;
+  optional string name = 2;
 }
 
 message Stream {
@@ -259,6 +275,8 @@ message Response {
   optional Settings settings = 6;
 
   optional Control control = 13;
+
+  repeated Soundtrack soundtracks = 12;
 }
 
 message Message {

@@ -84,29 +84,34 @@ func TestStateVolumeMerge(t *testing.T) {
 // here would silently detach every Home Assistant entity from its state topic.
 func TestStateSoundtrackMapKeys(t *testing.T) {
 	s := baby.State{}
-	s.SetSoundtrack(2, []baby.Soundtrack{{ID: 2, Name: "Ocean"}})
+	s.SetSoundtrack("Ocean.wav")
 
 	m := s.AsMap(false)
 
-	assert.Equal(t, int64(2), m["soundtrack"])
-	assert.Equal(t, "Ocean", m["soundtrack_name"])
+	assert.Equal(t, "Ocean.wav", m["soundtrack_name"])
 	assert.Equal(t, true, m["soundtrack_playing"])
 }
 
 func TestStateSoundtrackOff(t *testing.T) {
 	s := baby.State{}
-	s.SetSoundtrack(baby.SoundtrackOff, []baby.Soundtrack{{ID: 2, Name: "Ocean"}})
+	s.SetSoundtrack(baby.SoundtrackOffName)
 
+	assert.False(t, s.GetSoundtrackPlaying())
+	assert.Equal(t, "Off", s.GetSoundtrackName())
+
+	// An empty name means the same thing
+	s.SetSoundtrack("")
 	assert.False(t, s.GetSoundtrackPlaying())
 	assert.Equal(t, "Off", s.GetSoundtrackName())
 }
 
-// An id with no catalog entry still has to produce a usable name, since the
-// catalog may not have arrived yet.
-func TestStateSoundtrackUnknownIDFallsBack(t *testing.T) {
-	s := baby.State{}
-	s.SetSoundtrack(3, nil)
+// The camera identifies sounds by filename; the display name drops the
+// extension for user-facing lists.
+func TestNewSoundtrackDerivesDisplayName(t *testing.T) {
+	entry := baby.NewSoundtrack("White Noise.wav")
+	assert.Equal(t, "White Noise.wav", entry.Name)
+	assert.Equal(t, "White Noise", entry.DisplayName)
 
-	assert.Equal(t, "Soundtrack 3", s.GetSoundtrackName())
-	assert.True(t, s.GetSoundtrackPlaying())
+	bare := baby.NewSoundtrack("Waves")
+	assert.Equal(t, "Waves", bare.DisplayName)
 }

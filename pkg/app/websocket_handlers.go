@@ -2,7 +2,7 @@ package app
 
 import (
 	"errors"
-	"strconv"
+	"strings"
 	"time"
 
 	"github.com/indiefan/home_assistant_nanit/pkg/baby"
@@ -306,222 +306,6 @@ func processStatus(babyUID string, status *client.Status, stateManager *baby.Sta
 	log.Debug().Str("baby_uid", babyUID).Interface("device_info", deviceInfo).Msg("Updated device info from status")
 }
 
-// ---------------------------------------------------------------------------
-// Soundtrack (white noise) control
-//
-// The camera can play a small set of built-in sounds. Which Control field
-// selects them is NOT part of the reverse-engineered schema: tags 1, 2 and 7+
-// on Control are unmapped, and GET_SOUNDTRACKS (21) has no mapped response
-// field either.
-//
-// soundtrackControlFieldTag below is the single value that needs filling in
-// once the tag has been identified against a live camera. SOUNDTRACK_CAPTURE.md
-// documents how to find it. While it is 0 the feature stays inert: sends are
-// refused and inbound parsing is skipped, so an unconfigured build never puts
-// guessed bytes on the wire to a baby monitor.
-// ---------------------------------------------------------------------------
-
-// soundtrackControlFieldTag - protobuf field number on Control that selects the
-// active soundtrack. 0 means "not yet identified".
-//
-// TODO: set this to the tag discovered via SOUNDTRACK_CAPTURE.md.
-const soundtrackControlFieldTag int32 = 0
-
-// ErrSoundtrackFieldUnknown - returned by every soundtrack send path while the
-// controlling field tag has not been identified
-var ErrSoundtrackFieldUnknown = errors.New("soundtrack control field is not identified yet; see SOUNDTRACK_CAPTURE.md")
-
-// soundtrackControlConfigured - whether the controlling field tag is known
-func soundtrackControlConfigured() bool {
-	return soundtrackControlFieldTag != 0
-}
-
-// sendSoundCommand - plays the given soundtrack, or stops playback when passed
-// baby.SoundtrackOff
-func sendSoundCommand(soundtrackID int32, conn *client.WebsocketConnection) error {
-	if !soundtrackControlConfigured() {
-		log.Warn().Msg("Ignoring soundtrack command: controlling field tag is not configured")
-		return ErrSoundtrackFieldUnknown
-	}
-
-	log.Info().
-		Int32("soundtrack", soundtrackID).
-		Int32("field_tag", soundtrackControlFieldTag).
-		Msg("Sending soundtrack command")
-
-	control := &client.Control{}
-	client.SetUnknownVarintField(control, soundtrackControlFieldTag, uint64(soundtrackID))
-
-	conn.SendRequest(client.RequestType_PUT_CONTROL, &client.Request{
-		Control: control,
-	})
-
-	return nil
-}
-
-// processSoundtrack - reads the active soundtrack out of an inbound Control
-func processSoundtrack(babyUID string, control *client.Control, stateManager *baby.StateManager) {
-	if !soundtrackControlConfigured() {
-		return
-	}
-
-	value, ok := client.GetUnknownVarintField(control, soundtrackControlFieldTag)
-	if !ok {
-		return
-	}
-
-	catalog := stateManager.GetBabyState(babyUID).GetAvailableSoundtracks()
-
-	stateUpdate := baby.State{}
-	stateUpdate.SetSoundtrack(int32(value), catalog)
-	stateManager.Update(babyUID, stateUpdate)
-
-	log.Debug().
-		Str("baby_uid", babyUID).
-		Int32("soundtrack", int32(value)).
-		Msg("Updated soundtrack state from camera")
-}
-
-// requestSoundtracks - asks the camera for its built-in sound catalog.
-//
-// The response shape is unmapped, so the reply is dumped field by field rather
-// than decoded through the schema.
-func requestSoundtracks(babyUID string, conn *client.WebsocketConnection, stateManager *baby.StateManager) {
-	awaitResponse := conn.SendRequest(client.RequestType_GET_SOUNDTRACKS, &client.Request{})
-
-	go func() {
-		res, err := awaitResponse(30 * time.Second)
-		if err != nil {
-			log.Warn().Err(err).Str("baby_uid", babyUID).Msg("GET_SOUNDTRACKS request failed")
-			return
-		}
-
-		processSoundtracksResponse(babyUID, res, stateManager)
-	}()
-}
-
-// processSoundtracksResponse - logs a GET_SOUNDTRACKS reply in full and makes a
-// best-effort attempt at extracting the catalog from it
-func processSoundtracksResponse(babyUID string, res *client.Response, stateManager *baby.StateManager) {
-	unknown := client.DescribeUnknownFields(res)
-
-	// Always dump the raw shape: this is the payload SOUNDTRACK_CAPTURE.md asks
-	// the operator to read the soundtrack identifiers out of.
-	log.Info().
-		Str("baby_uid", babyUID).
-		Int32("status_code", res.GetStatusCode()).
-		Str("status_message", res.GetStatusMessage()).
-		Interface("unknown_fields", unknown).
-		Str("raw", res.String()).
-		Msg("GET_SOUNDTRACKS response")
-
-	if len(unknown) == 0 {
-		log.Warn().Str("baby_uid", babyUID).Msg("GET_SOUNDTRACKS returned no unmapped fields; the camera may not report a catalog")
-		return
-	}
-
-	catalog := extractSoundtrackCatalog(unknown)
-	if len(catalog) == 0 {
-		log.Warn().Str("baby_uid", babyUID).Msg("Unable to infer a soundtrack catalog from the response; read the dump above and map it by hand")
-		return
-	}
-
-	log.Info().
-		Str("baby_uid", babyUID).
-		Interface("soundtracks", catalog).
-		Msg("Discovered camera soundtrack catalog")
-
-	stateUpdate := baby.State{}
-	stateUpdate.DeviceInfo = &baby.DeviceInfo{AvailableSoundtracks: catalog}
-	stateManager.Update(babyUID, stateUpdate)
-}
-
-// extractSoundtrackCatalog - infers a soundtrack list from unmapped fields.
-//
-// Two shapes are recognised, covering the plausible encodings:
-//   - repeated embedded messages holding a varint id and a string name
-//   - repeated bare strings, in which case position is used as the id
-//
-// Anything else returns nothing, leaving the logged dump as the source of truth.
-func extractSoundtrackCatalog(fields []client.UnknownField) []baby.Soundtrack {
-	catalog := make([]baby.Soundtrack, 0)
-
-	for _, field := range fields {
-		if len(field.Nested) > 0 {
-			entry, ok := soundtrackFromNested(field.Nested)
-			if ok {
-				catalog = append(catalog, entry)
-			}
-			continue
-		}
-
-		if name, ok := unquoteFieldValue(field.Value); ok {
-			catalog = append(catalog, baby.Soundtrack{ID: int32(len(catalog) + 1), Name: name})
-		}
-	}
-
-	if len(catalog) == 0 {
-		return nil
-	}
-
-	return catalog
-}
-
-// soundtrackFromNested - pulls an (id, name) pair out of an embedded message
-func soundtrackFromNested(fields []client.UnknownField) (baby.Soundtrack, bool) {
-	entry := baby.Soundtrack{}
-	haveID := false
-	haveName := false
-
-	for _, field := range fields {
-		if !haveID && field.WireType == "varint" {
-			if id, ok := field.Value.(uint64); ok {
-				entry.ID = int32(id)
-				haveID = true
-				continue
-			}
-		}
-
-		if !haveName {
-			if name, ok := unquoteFieldValue(field.Value); ok {
-				entry.Name = name
-				haveName = true
-			}
-		}
-	}
-
-	// A name is what makes an entry useful; an id-only entry is not a catalog.
-	if !haveName {
-		return entry, false
-	}
-
-	if !haveID {
-		return entry, false
-	}
-
-	return entry, true
-}
-
-// unquoteFieldValue - recovers the text of a printable length-delimited field,
-// which DescribeUnknownFields renders as a quoted Go string literal
-func unquoteFieldValue(value interface{}) (string, bool) {
-	raw, ok := value.(string)
-	if !ok {
-		return "", false
-	}
-
-	unquoted, err := strconv.Unquote(raw)
-	if err != nil {
-		return "", false
-	}
-
-	if unquoted == "" {
-		return "", false
-	}
-
-	return unquoted, true
-}
-
 // logInboundFrame - dumps a complete inbound message at trace level, including
 // any field the schema does not map.
 //
@@ -556,16 +340,167 @@ func logInboundFrame(babyUID string, m *client.Message) {
 	event.Str("raw", m.String()).Msg("Websocket frame")
 }
 
-// resumeSoundtrackID - the soundtrack to start when playback is switched on
+// ---------------------------------------------------------------------------
+// Soundtrack (white noise) control
+//
+// Playback is driven by PUT_PLAYBACK carrying a Playback message, not by
+// PUT_CONTROL as the unmapped Control tags first suggested. Captured from a
+// live camera:
+//
+//	stop:  request:{type:PUT_PLAYBACK playback:{status:STOPPED}}
+//	reply: response:{requestType:PUT_PLAYBACK statusCode:200 statusMessage:"OK"}
+//
+// GET_SOUNDTRACKS lists the built-in sounds as Response.soundtracks (field 12),
+// each an optional type (0 on every built-in seen) and a filename. The filename
+// is the identifier — there is no numeric id.
+//
+// One thing is still unconfirmed: which Playback field names the track to play.
+// Stopping needs no name, and the camera does not broadcast track changes, so it
+// could not be read off the wire. soundtrackNameFieldTag holds the current
+// hypothesis and is written as an unknown field, so other tags can be tried
+// without regenerating the schema. See SOUNDTRACK_CAPTURE.md.
+// ---------------------------------------------------------------------------
+
+// soundtrackNameFieldTag - field number on Playback carrying the track filename.
+//
+// Tag 2 is a hypothesis, not an observation: it is the next free tag after the
+// required status, and it is what Soundtrack itself uses for the name. Verify
+// with /api/debug/playback before trusting it.
+const soundtrackNameFieldTag int32 = 2
+
+// sendSoundCommand - starts the named soundtrack, or stops playback when given
+// an empty name or baby.SoundtrackOffName
+func sendSoundCommand(name string, conn *client.WebsocketConnection) error {
+	if conn == nil {
+		return errors.New("no websocket connection")
+	}
+
+	if name == "" || strings.EqualFold(name, baby.SoundtrackOffName) {
+		log.Info().Msg("Stopping soundtrack playback")
+
+		conn.SendRequest(client.RequestType_PUT_PLAYBACK, &client.Request{
+			Playback: &client.Playback{
+				Status: client.Playback_STOPPED.Enum(),
+			},
+		})
+
+		return nil
+	}
+
+	log.Info().Str("soundtrack", name).Msg("Starting soundtrack playback")
+
+	playback := &client.Playback{
+		Status: client.Playback_STARTED.Enum(),
+	}
+
+	// Written as an unknown field while the tag is unconfirmed; swapping the
+	// constant is enough to try another one.
+	client.SetUnknownBytesField(playback, soundtrackNameFieldTag, []byte(name))
+
+	conn.SendRequest(client.RequestType_PUT_PLAYBACK, &client.Request{
+		Playback: playback,
+	})
+
+	return nil
+}
+
+// processPlayback - reflects a playback state change reported by the camera.
+//
+// The camera broadcasts a PUT_PLAYBACK request when playback stops. A start
+// carries the track name if it rides on the message; when it does not, the
+// name we last commanded is kept rather than being cleared.
+func processPlayback(babyUID string, playback *client.Playback, stateManager *baby.StateManager) {
+	if playback == nil || playback.Status == nil {
+		return
+	}
+
+	stateUpdate := baby.State{}
+
+	if *playback.Status == client.Playback_STOPPED {
+		stateUpdate.SetSoundtrack(baby.SoundtrackOffName)
+		stateManager.Update(babyUID, stateUpdate)
+
+		log.Debug().Str("baby_uid", babyUID).Msg("Camera reported soundtrack stopped")
+		return
+	}
+
+	// Started. Prefer a name carried on the message; fall back to whatever is
+	// already known so the entity does not report a bare "playing".
+	name := stateManager.GetBabyState(babyUID).GetSoundtrackName()
+	if name == "" || name == baby.SoundtrackOffName {
+		name = soundtrackUnknownName
+	}
+
+	if raw, ok := client.GetUnknownBytesField(playback, soundtrackNameFieldTag); ok {
+		name = string(raw)
+	}
+
+	stateUpdate.SetSoundtrack(name)
+	stateManager.Update(babyUID, stateUpdate)
+
+	log.Debug().Str("baby_uid", babyUID).Str("soundtrack", name).Msg("Camera reported soundtrack playing")
+}
+
+// soundtrackUnknownName - shown when the camera reports playback without
+// naming the track
+const soundtrackUnknownName = "Playing"
+
+// requestSoundtracks - asks the camera for its built-in sound catalog
+func requestSoundtracks(babyUID string, conn *client.WebsocketConnection, stateManager *baby.StateManager) {
+	awaitResponse := conn.SendRequest(client.RequestType_GET_SOUNDTRACKS, &client.Request{})
+
+	go func() {
+		res, err := awaitResponse(30 * time.Second)
+		if err != nil {
+			log.Warn().Err(err).Str("baby_uid", babyUID).Msg("GET_SOUNDTRACKS request failed")
+			return
+		}
+
+		processSoundtracksResponse(babyUID, res, stateManager)
+	}()
+}
+
+// processSoundtracksResponse - records the camera's soundtrack catalog
+func processSoundtracksResponse(babyUID string, res *client.Response, stateManager *baby.StateManager) {
+	catalog := make([]baby.Soundtrack, 0, len(res.GetSoundtracks()))
+	for _, entry := range res.GetSoundtracks() {
+		if entry.GetName() == "" {
+			continue
+		}
+
+		catalog = append(catalog, baby.NewSoundtrack(entry.GetName()))
+	}
+
+	if len(catalog) == 0 {
+		// Anything the schema failed to account for is still worth seeing
+		log.Warn().
+			Str("baby_uid", babyUID).
+			Interface("unknown_fields", client.DescribeUnknownFields(res)).
+			Str("raw", res.String()).
+			Msg("GET_SOUNDTRACKS returned no usable soundtracks")
+		return
+	}
+
+	log.Info().
+		Str("baby_uid", babyUID).
+		Interface("soundtracks", catalog).
+		Msg("Discovered camera soundtrack catalog")
+
+	stateUpdate := baby.State{}
+	stateUpdate.DeviceInfo = &baby.DeviceInfo{AvailableSoundtracks: catalog}
+	stateManager.Update(babyUID, stateUpdate)
+}
+
+// resumeSoundtrackName - the track to start when playback is switched on
 // without naming one: whatever played last, else the camera's first sound
-func resumeSoundtrackID(state *baby.State) int32 {
-	if current := state.GetSoundtrack(); current != baby.SoundtrackOff {
+func resumeSoundtrackName(state *baby.State) string {
+	if current := state.GetSoundtrackName(); current != "" && current != baby.SoundtrackOffName && current != soundtrackUnknownName {
 		return current
 	}
 
 	if catalog := state.GetAvailableSoundtracks(); len(catalog) > 0 {
-		return catalog[0].ID
+		return catalog[0].Name
 	}
 
-	return 1
+	return ""
 }

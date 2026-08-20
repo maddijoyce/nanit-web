@@ -144,6 +144,10 @@ func setupAPIRoutes(babies []baby.Baby, dataDir DataDirectories, stateManager *b
 			handleDebugControlAPI(w, r, babies, app)
 		})
 
+		http.HandleFunc("/api/debug/playback", func(w http.ResponseWriter, r *http.Request) {
+			handleDebugPlaybackAPI(w, r, babies, app)
+		})
+
 		http.HandleFunc("/api/debug/soundtracks", func(w http.ResponseWriter, r *http.Request) {
 			handleDebugSoundtracksAPI(w, r, babies, stateManager, app)
 		})

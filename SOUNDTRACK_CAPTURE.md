@@ -1,252 +1,223 @@
 # Soundtrack capture runbook
 
-Identifying the camera control that plays Nanit's built-in sounds (white noise,
-nature sounds), so soundtrack control can be finished.
+Notes on Nanit's soundtrack (white noise) protocol, and the procedure for
+confirming the one field that is still unverified.
 
-Everything except one value is already implemented. That value is the protobuf
-field number on the `Control` message which selects a soundtrack. This document
-explains how to find it against your camera and where to put it.
-
-> **Safety.** These steps send experimental bytes to a live baby monitor.
+> **Safety.** The steps below send experimental bytes to a live baby monitor.
 > Do them while the camera is **not** in active use, and **turn the volume
-> down first** — an unknown field could start playback at whatever level the
-> camera was last set to. The experiment endpoints are refused unless you opt
-> in explicitly, and they should be turned off again when you are done.
+> down first**. The experiment endpoints are refused unless you opt in
+> explicitly, and should be turned off again afterwards.
 
 ---
 
-## 1. What is already known
+## 1. Findings
 
-Established from the generated schema (`pkg/client/websocket.pb.go`) and its
-source (`pkg/client/websocket.proto`):
+Captured from a Nanit Pro on 20 Aug 2026. This section is the record; the code
+follows it.
 
-| Fact | Value |
-|---|---|
-| Request types | `GET_SETTINGS=4`, `PUT_SETTINGS=5`, `GET_CONTROL=6`, `PUT_CONTROL=7`, `GET_SOUNDTRACKS=21` |
-| `PUT_SOUNDTRACKS` | Does not exist |
-| `Control` mapped tags | `nightLight=3`, `sensorDataTransfer=4`, `forceConnectToServer=5`, `nightLightTimeout=6` |
-| `Control` free tags | **1, 2, 7 and above** — the soundtrack selector is most likely one of these |
-| `Settings.volume` | Tag 9, `optional int32`, set via `PUT_SETTINGS` — fully implemented already |
-| `Response` soundtracks field | **None.** The schema maps `status=5`, `settings=6`, `sensorData=9`, `control=13` only |
+### Playback is PUT_PLAYBACK, not PUT_CONTROL
 
-Because `Response` has no soundtracks field, a `GET_SOUNDTRACKS` reply arrives
-as *unknown fields* — bytes protobuf preserves but cannot name. The code decodes
-those and prints them, so you can read the real structure instead of guessing
-at it. That decoder is `client.DescribeUnknownFields`.
+The initial hypothesis — an unmapped field on `Control`, sent via `PUT_CONTROL`
+— was **wrong**. Playback is driven by `PUT_PLAYBACK` (request type 20) carrying
+the `Playback` message, which was already in the schema.
 
-### Findings from your camera
+Stopping a sound, observed as a broadcast from the camera:
 
-*Fill this in as you work through the steps below. This is the record that turns
-the scaffolding into a finished feature.*
+```
+request:{id:2640 type:PUT_PLAYBACK playback:{status:STOPPED}}
+response:{requestId:83 requestType:PUT_PLAYBACK statusCode:200 statusMessage:"OK"}
+```
 
-- `GET_SOUNDTRACKS` response shape: _(paste the `unknown_fields` dump)_
-- Soundtrack identifiers and names: _(id → name)_
-- Soundtrack `Control` field tag: _(the number to put in the code)_
-- Value encoding: _(e.g. varint; 0 = off, 1..N select a sound)_
+Starting produced the same `200 OK` response shape. `Playback.status` is a
+required enum, `STARTED = 0` / `STOPPED = 1`.
+
+### The catalog is Response.soundtracks, field 12
+
+`GET_SOUNDTRACKS` (21) returns four entries on field 12, each an embedded
+message of `{1: varint, 2: string}`:
+
+```
+12:"\x08\x00\x12\x0fWhite Noise.wav"
+12:"\x08\x00\x12\tBirds.wav"
+12:"\x08\x00\x12\tWaves.wav"
+12:"\x08\x00\x12\x08Wind.wav"
+```
+
+So the built-in sounds are **White Noise, Birds, Waves, Wind**.
+
+Two things worth noting:
+
+- Field 1 was `0` on **every** entry, so it is *not* an id. It is recorded as
+  `type` in the schema with its purpose unknown.
+- **The filename is the identifier.** There are no numeric soundtrack ids, which
+  is why the implementation keys everything on the name and derives a display
+  name by dropping the `.wav` extension.
+
+This is now mapped properly in `websocket.proto`:
+
+```protobuf
+message Soundtrack {
+  optional int32 type = 1;
+  optional string name = 2;
+}
+
+message Response {
+  ...
+  repeated Soundtrack soundtracks = 12;
+}
+```
+
+A unit test decodes the exact captured bytes and asserts nothing is left
+unmapped.
+
+### Still unverified: which Playback field names the track
+
+Stopping needs no name, and the camera **does not broadcast track changes**, so
+the field carrying the filename could not be read off the wire.
+
+The code sends it as field **2** on `Playback` — a hypothesis, not an
+observation. It is the next free tag after the required `status`, and it is what
+`Soundtrack` itself uses for a name. It is written as an unknown field, so
+another tag can be tried by changing one constant, with no regeneration:
+
+```go
+// pkg/app/websocket_handlers.go
+const soundtrackNameFieldTag int32 = 2
+```
+
+**What works regardless:** start and stop. Only choosing *which* track depends
+on this tag.
 
 ---
 
-## 2. Enable tracing and the experiment endpoints
+## 2. Confirming the name field
 
-Two environment variables. Both are off by default.
+### Enable the harness
 
 ```bash
 NANIT_LOG_LEVEL=trace      # dump every websocket frame, including unmapped fields
 NANIT_DEBUG_CONTROL=true   # expose /api/debug/* — off in normal operation
 ```
 
-With Docker:
-
-```bash
-docker run -d --name=nanit \
-  -e NANIT_LOG_LEVEL=trace \
-  -e NANIT_DEBUG_CONTROL=true \
-  ... your usual flags ...
-  deltathreed/nanit-web
-```
-
-On startup you should see:
+You should see on startup:
 
 ```
 WRN NANIT_DEBUG_CONTROL is enabled: experimental /api/debug endpoints are exposed. Do not leave this on.
 ```
 
-Trace logging is verbose — it prints every frame from the camera. Follow the log
-in a second terminal:
+Follow the log in a second terminal (`docker logs -f nanit`).
+
+### Check the catalog decodes
 
 ```bash
-docker logs -f nanit
+curl -s http://localhost:8080/api/debug/soundtracks | jq '.catalog, .unknown_fields'
 ```
 
----
+`catalog` should list the four sounds. `unknown_fields` should be **empty** — if
+it is not, the response carries something the schema still misses; paste it back
+and it can be mapped.
 
-## 3. Read the soundtrack catalog
+### Try the hypothesis first
 
-`GET_SOUNDTRACKS` is sent automatically at startup, and its reply is logged in
-full. Look for:
-
-```
-INF GET_SOUNDTRACKS response baby_uid=... status_code=200 unknown_fields=[...] raw="..."
-```
-
-You can also request it on demand:
+Volume down, then:
 
 ```bash
-curl -s http://localhost:8080/api/debug/soundtracks | jq
-```
-
-The `unknown_fields` array is the useful part. Each entry reports the field
-`tag`, its `wire_type`, the decoded `value`, and `nested` when the payload is
-itself a message. For example, a catalog of embedded id/name pairs looks like:
-
-```json
-[
-  {"path":"Response","tag":14,"wire_type":"bytes","value":"<21 bytes>",
-   "nested":[{"tag":1,"wire_type":"varint","value":1},
-             {"tag":2,"wire_type":"bytes","value":"\"White Noise\""}]}
-]
-```
-
-The code already recognises that shape, plus a plain list of strings, and will
-log `Discovered camera soundtrack catalog` when it can infer the list. If it
-logs `Unable to infer a soundtrack catalog`, read the dump and map it by hand —
-**record it in the Findings section above**.
-
-The ids you find here are the values the play command will reference.
-
----
-
-## 4. Find the control field by watching the app (preferred)
-
-This is the low-risk route: **the camera does the writing, you only read.**
-
-Nanit propagates state changes to every connected session, so when you change
-something in the phone app, the camera broadcasts it to this bridge too.
-
-1. Make sure trace logging is on and you are following the log.
-2. Turn the camera volume down.
-3. In the Nanit app, start a soundtrack.
-4. Watch for a `Websocket frame` line with `unknown_fields` populated, on a
-   frame whose `request_type` is `PUT_CONTROL`:
-
-```
-TRC Websocket frame baby_uid=... direction=camera->us request_type=PUT_CONTROL \
-    unknown_fields=[{"path":"Message.request.control","tag":7,"wire_type":"varint","value":2}] raw="..."
-```
-
-That `tag` is the answer, and `value` tells you how sounds are numbered.
-
-5. Repeat for each of the four sounds, and again with playback stopped, to learn
-   the full value mapping (the "off" value is almost certainly 0).
-
-If toggling a sound produces no frame at all, the camera may only report it to
-the session that made the change. In that case use the sweep below.
-
----
-
-## 5. Sweep candidate field tags (fallback)
-
-Only if step 4 produced nothing. This **writes** to the camera, so keep the
-volume low and the camera out of use.
-
-`/api/debug/control` sends a single `PUT_CONTROL` carrying one arbitrary field:
-
-```bash
-curl -s -X POST http://localhost:8080/api/debug/control \
+curl -s -X POST http://localhost:8080/api/debug/playback \
   -H 'Content-Type: application/json' \
-  -d '{"tag":7,"value":1}' | jq
+  -d '{"tag":2,"name":"Wind.wav"}' | jq
 ```
 
-The response includes the camera's `status_code` and `status_message`. A
-rejected field usually comes back non-200, which is itself informative.
-
-Sweep the unmapped tags, listening for sound after each:
+If **Wind** plays, tag 2 is correct and nothing needs changing — the default is
+already right. Stop it with:
 
 ```bash
-for tag in 1 2 7 8 9 10 11 12; do
+curl -s -X POST http://localhost:8080/api/debug/playback \
+  -H 'Content-Type: application/json' -d '{"stop":true}'
+```
+
+Distinguish the three outcomes:
+
+| What happens | Meaning |
+|---|---|
+| Wind plays | Tag 2 is correct |
+| A *different* sound plays (or a default one) | The command works but the name is ignored — wrong tag |
+| Nothing plays, or a non-200 status | The camera rejected the message |
+
+That middle case is the important one: playback starting is **not** by itself
+proof the tag is right, because `status:STARTED` alone may start a default
+track. Confirm by asking for a specific, distinctive sound and checking you get
+*that* one.
+
+### Sweep, if tag 2 is wrong
+
+```bash
+for tag in 2 3 4 5 6 7 8; do
   echo "--- tag $tag"
-  curl -s -X POST http://localhost:8080/api/debug/control \
+  curl -s -X POST http://localhost:8080/api/debug/playback \
     -H 'Content-Type: application/json' \
-    -d "{\"tag\":$tag,\"value\":1}" | jq -c '{tag:.tag,status:.status_code,msg:.status_message}'
-  sleep 3
+    -d "{\"tag\":$tag,\"name\":\"Wind.wav\"}" | jq -c '{tag,status:.status_code,msg:.status_message}'
+  sleep 4
+  curl -s -X POST http://localhost:8080/api/debug/playback \
+    -H 'Content-Type: application/json' -d '{"stop":true}' > /dev/null
+  sleep 1
 done
 ```
 
-Notes:
+Listen for the tag where **Wind specifically** plays. Alternate the requested
+sound between runs (Wind, then Birds) so you can tell a real selection from a
+default.
 
-- `{"tag":N,"value":V}` sends a varint. For a length-delimited candidate, send
-  `{"tag":N,"text":"..."}` instead.
-- Use a soundtrack id from step 3 as `value` if you have one; otherwise `1`.
-- When a tag starts playback, **stop it** with `{"tag":N,"value":0}`.
-- With multiple cameras, add `"baby_uid":"..."`.
+### Record the answer
 
-Skip tags 3–6: those are mapped already, and writing to them changes the night
-light rather than the sound.
-
----
-
-## 6. Put the discovered value into the code
-
-One constant, in `pkg/app/websocket_handlers.go`:
+Change the constant in `pkg/app/websocket_handlers.go`:
 
 ```go
-// soundtrackControlFieldTag - protobuf field number on Control that selects the
-// active soundtrack. 0 means "not yet identified".
-//
-// TODO: set this to the tag discovered via SOUNDTRACK_CAPTURE.md.
-const soundtrackControlFieldTag int32 = 0
+const soundtrackNameFieldTag int32 = 2   // <- the confirmed tag
 ```
 
-Change the `0` to the tag from step 4 or 5 and rebuild. That single edit
-activates the whole path: sending, state tracking, MQTT and the Home Assistant
-entities all key off it, and the guards that keep the feature inert stop firing.
-
-If "off" is not 0 on your camera, adjust `SoundtrackOff` in `pkg/baby/state.go`
-to match.
-
-### Making it part of the schema
-
-Once the tag is confirmed, fold it into the protobuf definition properly rather
-than leaving it as an unknown field. Edit `pkg/client/websocket.proto`:
+Then fold it into the schema properly. Edit `pkg/client/websocket.proto`:
 
 ```protobuf
-message Control {
-  ...
-  optional int32 soundtrack = 7;   // use the discovered tag
+message Playback {
+  enum Status {
+    STARTED = 0;
+    STOPPED = 1;
+  }
+
+  required Status status = 1;
+  optional string soundtrack = 2;   // the confirmed tag
 }
 ```
 
-Then regenerate. The toolchain is not in the repo; install it once:
+Regenerate:
 
 ```bash
-# protoc 29.3 and protoc-gen-go v1.36.5 are the versions the checked-in file was built with
 go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.5
 protoc --go_out=. --go_opt=module=github.com/indiefan/home_assistant_nanit pkg/client/websocket.proto
 ```
 
-Regenerating with those versions reproduces the committed
+protoc **29.3** with protoc-gen-go **v1.36.5** reproduces the committed
 `websocket.pb.go` byte for byte, so any diff you see is genuinely your change.
-
-After that, `sendSoundCommand` and `processSoundtrack` can use the generated
-`Soundtrack` accessors instead of the unknown-field helpers.
+Afterwards `sendSoundCommand` and `processPlayback` can use the generated
+accessors instead of `SetUnknownBytesField` / `GetUnknownBytesField`.
 
 ---
 
-## 7. Verify
+## 3. Verify
 
 ```bash
-# Play a sound (id from step 3)
+# Play a specific sound
 curl -s -X POST http://localhost:8080/api/control/soundtrack \
   -H 'Content-Type: application/json' \
-  -d '{"baby_uid":"YOUR_UID","action":"set","value":1}'
+  -d '{"baby_uid":"YOUR_UID","action":"set","name":"Waves.wav"}'
 
-# Stop it
+# Stop
 curl -s -X POST http://localhost:8080/api/control/soundtrack \
   -H 'Content-Type: application/json' \
-  -d '{"baby_uid":"YOUR_UID","action":"set","value":0}'
+  -d '{"baby_uid":"YOUR_UID","action":"set","name":"Off"}'
 ```
 
-Over MQTT:
+Over MQTT — note the select takes **display names** (no `.wav`):
 
 ```bash
 mosquitto_pub -t 'nanit/babies/YOUR_UID/soundtrack/select' -m 'White Noise'
@@ -254,13 +225,25 @@ mosquitto_pub -t 'nanit/babies/YOUR_UID/soundtrack/switch' -m 'false'
 mosquitto_sub -t 'nanit/babies/YOUR_UID/soundtrack_name' -v
 ```
 
-In Home Assistant, the camera device should carry **Soundtrack** (switch),
-**Soundtrack Selection** (select) and **Volume** (number) entities. Changing a
-sound from the phone app should move the select, confirming the receive path.
+In Home Assistant the camera device should carry **Soundtrack** (switch) and
+**Soundtrack Selection** (select, options: Off, White Noise, Birds, Waves,
+Wind).
+
+### A known limitation
+
+The camera broadcasts a stop, but not a start and not a track change. So:
+
+- Stopping from the phone app **is** reflected here.
+- Starting or switching tracks from the phone app is **not** — the entity will
+  keep showing the last state this bridge knows about until something stops.
+
+Nothing can be done about that from this side; it is what the camera sends. If
+you ever see a `PUT_PLAYBACK` broadcast on start in the trace log, that
+assumption is worth revisiting.
 
 ---
 
-## 8. Turn the harness off
+## 4. Turn the harness off
 
 ```bash
 NANIT_LOG_LEVEL=info
@@ -268,23 +251,37 @@ NANIT_DEBUG_CONTROL=false   # or drop the variable
 ```
 
 The `/api/debug/*` routes are not registered at all unless `NANIT_DEBUG_CONTROL`
-is `true`, so clearing it removes them entirely.
+is `true`.
 
 ---
 
 ## Volume, for reference
 
-Volume needed no reverse engineering — `Settings.volume` is tag 9 and is already
-implemented end to end. One thing worth confirming while you are here: the
-schema does not document the value range. The code assumes **0–100** and clamps
-to it.
+Volume needed no reverse engineering — `Settings.volume` is tag 9 via
+`PUT_SETTINGS`, and it is confirmed working.
 
-Check what your camera actually reports:
+One caveat: the schema does not document the value range. The code assumes
+**0–100** and clamps to it. Check what your camera reports:
 
 ```bash
 NANIT_LOG_LEVEL=debug docker logs nanit 2>&1 | grep -i 'device info from settings'
 ```
 
-If the reported volume uses a different scale (0–10, say), update `MinVolume` /
-`MaxVolume` in `pkg/app/websocket_handlers.go` and the `min`/`max` of the volume
-number entity in `pkg/mqtt/discovery.go`.
+If the scale differs, update `MinVolume` / `MaxVolume` in
+`pkg/app/websocket_handlers.go` and the `min`/`max` of the volume number entity
+in `pkg/mqtt/discovery.go`.
+
+---
+
+## Appendix: the unknown-field decoder
+
+`client.DescribeUnknownFields` walks a message and every nested message,
+decoding anything the schema does not map — tag, wire type, value, and embedded
+messages. It is what made the `GET_SOUNDTRACKS` structure readable rather than
+guessable, and it stays useful for the next unmapped field.
+
+Every inbound frame is dumped through it at trace level:
+
+```
+TRC Websocket frame baby_uid=... request_type=PUT_PLAYBACK unknown_fields=[...] raw="..."
+```

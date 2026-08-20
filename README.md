@@ -155,7 +155,7 @@ per camera:
 | Standby | switch | |
 | Volume | number | Camera speaker volume, 0–100 |
 | Soundtrack | switch | Built-in sound playback on/off |
-| Soundtrack Selection | select | Options come from the camera's own catalog |
+| Soundtrack Selection | select | Options come from the camera's own catalog (e.g. White Noise, Birds, Waves, Wind) |
 
 Simply enable MQTT in your configuration and devices will appear automatically.
 Set `NANIT_MQTT_DISCOVERY=false` to publish state topics without announcing
@@ -164,11 +164,17 @@ entities.
 The video feed is not announced via discovery; add the camera manually as
 described below.
 
-**Soundtrack control is not finished.** The protobuf field that selects a
-soundtrack is not part of the reverse-engineered schema, so the two soundtrack
-entities appear but do nothing until the field is identified against a real
-camera. [SOUNDTRACK_CAPTURE.md](SOUNDTRACK_CAPTURE.md) is the runbook for
-finding it; it is a single constant to fill in afterwards.
+**Soundtrack control is partially verified.** Starting and stopping playback use
+`PUT_PLAYBACK` and are confirmed working. The camera lists its built-in sounds
+(White Noise, Birds, Waves, Wind) via `GET_SOUNDTRACKS`, identified by filename
+rather than by any numeric id. What is *not* yet confirmed is which field on the
+`Playback` message names the track to play, so selecting a specific sound may
+not work until that is checked against a camera — it is one constant to adjust.
+See [SOUNDTRACK_CAPTURE.md](SOUNDTRACK_CAPTURE.md).
+
+Note also that the camera broadcasts playback *stops* but not starts or track
+changes, so starting a sound from the Nanit app is not reflected in Home
+Assistant until it stops.
 
 ### Manual Camera Setup
 

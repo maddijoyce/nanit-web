@@ -113,6 +113,93 @@ func handleDebugControlAPI(w http.ResponseWriter, r *http.Request, babies []baby
 	json.NewEncoder(w).Encode(result)
 }
 
+// debugPlaybackRequest - a PUT_PLAYBACK with an arbitrary field carrying the
+// track name, for confirming which tag the camera reads it from
+type debugPlaybackRequest struct {
+	BabyUID string `json:"baby_uid"`
+	// Stop - send status STOPPED and nothing else
+	Stop bool `json:"stop,omitempty"`
+	// Tag - the protobuf field number on Playback to put the name in.
+	// Ignored when Stop is set, or when Name is empty.
+	Tag int32 `json:"tag,omitempty"`
+	// Name - the soundtrack filename, e.g. "Wind.wav"
+	Name string `json:"name,omitempty"`
+}
+
+// handleDebugPlaybackAPI - sends a PUT_PLAYBACK, optionally carrying the track
+// name under a candidate field tag
+func handleDebugPlaybackAPI(w http.ResponseWriter, r *http.Request, babies []baby.Baby, app *App) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var requestData debugPlaybackRequest
+	if err := json.NewDecoder(r.Body).Decode(&requestData); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	babyUID, err := resolveDebugBabyUID(requestData.BabyUID, babies)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	conn := app.getConnection(babyUID)
+	if conn == nil {
+		http.Error(w, "WebSocket not connected", http.StatusServiceUnavailable)
+		return
+	}
+
+	playback := &client.Playback{Status: client.Playback_STARTED.Enum()}
+	if requestData.Stop {
+		playback.Status = client.Playback_STOPPED.Enum()
+	} else if requestData.Name != "" {
+		if requestData.Tag < 1 {
+			http.Error(w, "tag must be a positive protobuf field number", http.StatusBadRequest)
+			return
+		}
+
+		client.SetUnknownBytesField(playback, requestData.Tag, []byte(requestData.Name))
+	}
+
+	log.Warn().
+		Str("baby_uid", babyUID).
+		Bool("stop", requestData.Stop).
+		Int32("tag", requestData.Tag).
+		Str("name", requestData.Name).
+		Msg("DEBUG: sending experimental PUT_PLAYBACK")
+
+	awaitResponse := conn.SendRequest(client.RequestType_PUT_PLAYBACK, &client.Request{
+		Playback: playback,
+	})
+
+	result := map[string]interface{}{
+		"baby_uid": babyUID,
+		"stop":     requestData.Stop,
+		"tag":      requestData.Tag,
+		"name":     requestData.Name,
+		"sent":     true,
+	}
+
+	if res, err := awaitResponse(10 * time.Second); err != nil {
+		result["response_error"] = err.Error()
+	} else {
+		result["status_code"] = res.GetStatusCode()
+		result["status_message"] = res.GetStatusMessage()
+		result["raw"] = res.String()
+
+		log.Warn().
+			Int32("status_code", res.GetStatusCode()).
+			Str("status_message", res.GetStatusMessage()).
+			Msg("DEBUG: experimental PUT_PLAYBACK response")
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
 // handleDebugSoundtracksAPI - re-issues GET_SOUNDTRACKS on demand and returns
 // the decoded reply, including every field the schema does not map
 func handleDebugSoundtracksAPI(w http.ResponseWriter, r *http.Request, babies []baby.Baby, stateManager *baby.StateManager, app *App) {

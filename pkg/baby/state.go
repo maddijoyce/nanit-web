@@ -1,7 +1,7 @@
 package baby
 
 import (
-	"fmt"
+	"path/filepath"
 	reflect "reflect"
 	"regexp"
 	"strings"
@@ -10,12 +10,9 @@ import (
 	"github.com/rs/zerolog"
 )
 
-const (
-	// SoundtrackOff - the soundtrack id meaning "nothing is playing"
-	SoundtrackOff int32 = 0
-	// SoundtrackOffName - the value published to the soundtrack select entity when silent
-	SoundtrackOffName = "Off"
-)
+// SoundtrackOffName - the value published to the soundtrack select entity when
+// nothing is playing, and accepted on the command topic to stop playback
+const SoundtrackOffName = "Off"
 
 type StreamRequestState int32
 
@@ -34,11 +31,23 @@ const (
 )
 
 // Soundtrack - a sound built into the camera, as reported by GET_SOUNDTRACKS.
-// Names are whatever the camera reports; they are not hardcoded, because the
+//
+// The camera identifies sounds by filename ("White Noise.wav"), not by a
+// numeric id. Names are whatever the camera reports and are not hardcoded: the
 // built-in set differs between camera models and firmware versions.
 type Soundtrack struct {
-	ID   int32  `json:"id"`
+	// Name - the wire identifier, e.g. "White Noise.wav"
 	Name string `json:"name"`
+	// DisplayName - Name without its file extension, for user-facing lists
+	DisplayName string `json:"display_name"`
+}
+
+// NewSoundtrack - builds a catalog entry from the camera's filename
+func NewSoundtrack(name string) Soundtrack {
+	return Soundtrack{
+		Name:        name,
+		DisplayName: strings.TrimSuffix(name, filepath.Ext(name)),
+	}
 }
 
 // DeviceInfo - struct holding device information from Nanit API responses
@@ -94,8 +103,7 @@ type State struct {
 	Standby          *bool
 	Volume           *int32
 
-	// Soundtrack - id of the sound the camera is currently playing, 0 when silent
-	Soundtrack        *int32
+	// SoundtrackName - the sound the camera is currently playing, "Off" when silent
 	SoundtrackName    *string
 	SoundtrackPlaying *bool
 
@@ -452,38 +460,19 @@ func (s *State) GetVolume() int32 {
 	return 0
 }
 
-// SetSoundtrack - records the active soundtrack, resolving the display name
-// against the catalog reported by the camera. An id of 0 means "not playing".
-func (s *State) SetSoundtrack(id int32, catalog []Soundtrack) *State {
-	s.Soundtrack = &id
-
-	playing := id != SoundtrackOff
-	s.SoundtrackPlaying = &playing
-
-	name := SoundtrackOffName
-	if playing {
-		// Fall back to the raw id when the catalog has not been fetched yet, so
-		// the entity still reports something actionable.
-		name = fmt.Sprintf("Soundtrack %d", id)
-		for _, entry := range catalog {
-			if entry.ID == id {
-				name = entry.Name
-				break
-			}
-		}
+// SetSoundtrack - records the active soundtrack by name. Pass SoundtrackOffName
+// (or an empty name) to record that nothing is playing.
+func (s *State) SetSoundtrack(name string) *State {
+	if name == "" {
+		name = SoundtrackOffName
 	}
+
 	s.SoundtrackName = &name
 
+	playing := !strings.EqualFold(name, SoundtrackOffName)
+	s.SoundtrackPlaying = &playing
+
 	return s
-}
-
-// GetSoundtrack - safely returns the active soundtrack id
-func (s *State) GetSoundtrack() int32 {
-	if s.Soundtrack != nil {
-		return *s.Soundtrack
-	}
-
-	return SoundtrackOff
 }
 
 // GetSoundtrackName - safely returns the active soundtrack name

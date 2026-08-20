@@ -308,3 +308,50 @@ func GetUnknownVarintField(m proto.Message, tag int32) (uint64, bool) {
 
 	return 0, false
 }
+
+// GetUnknownBytesField - reads the first length-delimited payload carried under
+// the given tag. Returns false when the message does not carry that tag.
+func GetUnknownBytesField(m proto.Message, tag int32) ([]byte, bool) {
+	if m == nil {
+		return nil, false
+	}
+
+	raw := m.ProtoReflect().GetUnknown()
+	for len(raw) > 0 {
+		num, typ, n := protowire.ConsumeTag(raw)
+		if n < 0 {
+			return nil, false
+		}
+		raw = raw[n:]
+
+		var size int
+		switch typ {
+		case protowire.VarintType:
+			_, size = protowire.ConsumeVarint(raw)
+		case protowire.Fixed32Type:
+			_, size = protowire.ConsumeFixed32(raw)
+		case protowire.Fixed64Type:
+			_, size = protowire.ConsumeFixed64(raw)
+		case protowire.BytesType:
+			v, vn := protowire.ConsumeBytes(raw)
+			if vn < 0 {
+				return nil, false
+			}
+			if int32(num) == tag {
+				return v, true
+			}
+			size = vn
+		case protowire.StartGroupType:
+			_, size = protowire.ConsumeGroup(num, raw)
+		default:
+			return nil, false
+		}
+
+		if size < 0 {
+			return nil, false
+		}
+		raw = raw[size:]
+	}
+
+	return nil, false
+}

@@ -238,7 +238,7 @@ func (conn *Connection) staticEntities(babyUID string, device discoveryDevice) [
 func (conn *Connection) soundtrackSelectEntity(babyUID string, device discoveryDevice, catalog []baby.Soundtrack) discoveryEntity {
 	options := []string{baby.SoundtrackOffName}
 	for _, entry := range catalog {
-		options = append(options, entry.Name)
+		options = append(options, entry.DisplayName)
 	}
 
 	return discoveryEntity{
@@ -275,7 +275,7 @@ func (conn *Connection) publishDiscoveryConfig(babyUID string, component string,
 func soundtrackCatalogKey(catalog []baby.Soundtrack) string {
 	key := ""
 	for _, entry := range catalog {
-		key += fmt.Sprintf("%d:%s;", entry.ID, entry.Name)
+		key += fmt.Sprintf("%s;", entry.Name)
 	}
 
 	return key

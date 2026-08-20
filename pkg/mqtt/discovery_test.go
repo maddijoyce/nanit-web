@@ -84,9 +84,10 @@ func TestSoundtrackSelectUsesCameraCatalog(t *testing.T) {
 	empty := conn.soundtrackSelectEntity("baby1", discoveryDevice{}, nil)
 	assert.Equal(t, []string{"Off"}, empty.Options)
 
+	// Options carry display names; the command handler maps them back to filenames
 	populated := conn.soundtrackSelectEntity("baby1", discoveryDevice{}, []baby.Soundtrack{
-		{ID: 1, Name: "White Noise"},
-		{ID: 2, Name: "Ocean"},
+		baby.NewSoundtrack("White Noise.wav"),
+		baby.NewSoundtrack("Ocean.wav"),
 	})
 	assert.Equal(t, []string{"Off", "White Noise", "Ocean"}, populated.Options)
 	assert.Equal(t, "nanit/babies/baby1/soundtrack/select", populated.CommandTopic)
@@ -120,8 +121,8 @@ func TestDiscoveryOmitsUnsetFields(t *testing.T) {
 }
 
 func TestDiscoveryCatalogKeyDetectsChanges(t *testing.T) {
-	a := []baby.Soundtrack{{ID: 1, Name: "White Noise"}}
-	b := []baby.Soundtrack{{ID: 1, Name: "White Noise"}, {ID: 2, Name: "Ocean"}}
+	a := []baby.Soundtrack{baby.NewSoundtrack("White Noise.wav")}
+	b := []baby.Soundtrack{baby.NewSoundtrack("White Noise.wav"), baby.NewSoundtrack("Ocean.wav")}
 
 	assert.Equal(t, soundtrackCatalogKey(a), soundtrackCatalogKey(a))
 	assert.NotEqual(t, soundtrackCatalogKey(a), soundtrackCatalogKey(b))
@@ -141,4 +142,55 @@ func TestDiscoverySensorsCarryStateClass(t *testing.T) {
 			assert.Empty(t, e.entity.StateClass, "%v should not declare a state class", e.objectID)
 		}
 	}
+}
+
+// The select publishes display names, but the camera expects filenames.
+func TestResolveSoundtrackNameMapsDisplayToFilename(t *testing.T) {
+	conn := testConnection()
+	conn.StateManager = baby.NewStateManager()
+	conn.StateManager.Update("baby1", *baby.NewState().SetDeviceInfo(&baby.DeviceInfo{
+		AvailableSoundtracks: []baby.Soundtrack{
+			baby.NewSoundtrack("White Noise.wav"),
+			baby.NewSoundtrack("Wind.wav"),
+		},
+	}))
+
+	name, ok := conn.resolveSoundtrackName("baby1", "White Noise")
+	assert.True(t, ok)
+	assert.Equal(t, "White Noise.wav", name)
+
+	// The filename itself is accepted too
+	name, ok = conn.resolveSoundtrackName("baby1", "Wind.wav")
+	assert.True(t, ok)
+	assert.Equal(t, "Wind.wav", name)
+
+	// "Off" always resolves, even with no catalog
+	name, ok = conn.resolveSoundtrackName("baby1", "Off")
+	assert.True(t, ok)
+	assert.Equal(t, baby.SoundtrackOffName, name)
+
+	_, ok = conn.resolveSoundtrackName("baby1", "Nonexistent")
+	assert.False(t, ok, "Unknown names must be rejected rather than sent to the camera")
+}
+
+// Switching on with no catalog must not invent a filename
+func TestResolveSoundtrackSwitchWithoutCatalog(t *testing.T) {
+	conn := testConnection()
+	conn.StateManager = baby.NewStateManager()
+
+	assert.Equal(t, baby.SoundtrackOffName, conn.resolveSoundtrackSwitch("baby1", true))
+	assert.Equal(t, baby.SoundtrackOffName, conn.resolveSoundtrackSwitch("baby1", false))
+}
+
+func TestResolveSoundtrackSwitchUsesFirstSound(t *testing.T) {
+	conn := testConnection()
+	conn.StateManager = baby.NewStateManager()
+	conn.StateManager.Update("baby1", *baby.NewState().SetDeviceInfo(&baby.DeviceInfo{
+		AvailableSoundtracks: []baby.Soundtrack{
+			baby.NewSoundtrack("White Noise.wav"),
+			baby.NewSoundtrack("Wind.wav"),
+		},
+	}))
+
+	assert.Equal(t, "White Noise.wav", conn.resolveSoundtrackSwitch("baby1", true))
 }

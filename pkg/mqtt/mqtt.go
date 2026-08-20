@@ -16,7 +16,7 @@ import (
 type SendLightCommandHandler func(nightLightState bool)
 type SendStandbyCommandHandler func(standbyState bool)
 type SendVolumeCommandHandler func(level int32)
-type SendSoundtrackCommandHandler func(soundtrackID int32)
+type SendSoundtrackCommandHandler func(soundtrackName string)
 
 // Connection - MQTT context
 type Connection struct {
@@ -265,16 +265,16 @@ func (conn *Connection) subscribeToSoundtrackCommand() {
 
 		payload := strings.TrimSpace(string(msg.Payload()))
 
-		var soundtrackID int32
+		var soundtrackName string
 		switch command {
 		case "switch":
 			enabled := payload == "true" || payload == "ON"
-			soundtrackID = conn.resolveSoundtrackSwitch(babyUID, enabled)
+			soundtrackName = conn.resolveSoundtrackSwitch(babyUID, enabled)
 
 			log.Debug().
 				Str("baby", babyUID).
 				Bool("enabled", enabled).
-				Int32("soundtrack", soundtrackID).
+				Str("soundtrack", soundtrackName).
 				Str("payload", payload).
 				Msg("Received soundtrack switch command")
 
@@ -287,11 +287,11 @@ func (conn *Connection) subscribeToSoundtrackCommand() {
 					Msg("Unknown soundtrack name; the camera has not reported a matching sound")
 				return
 			}
-			soundtrackID = resolved
+			soundtrackName = resolved
 
 			log.Debug().
 				Str("baby", babyUID).
-				Int32("soundtrack", soundtrackID).
+				Str("soundtrack", soundtrackName).
 				Str("payload", payload).
 				Msg("Received soundtrack select command")
 
@@ -305,7 +305,7 @@ func (conn *Connection) subscribeToSoundtrackCommand() {
 			return
 		}
 
-		conn.sendSoundtrackCommandHandler(soundtrackID)
+		conn.sendSoundtrackCommandHandler(soundtrackName)
 	}
 
 	if token := conn.client.Subscribe(commandTopic, 0, soundtrackMessageHandler); token.Wait() && token.Error() != nil {
@@ -313,40 +313,46 @@ func (conn *Connection) subscribeToSoundtrackCommand() {
 	}
 }
 
-// resolveSoundtrackSwitch - maps an on/off request onto a soundtrack id.
+// resolveSoundtrackSwitch - maps an on/off request onto a track name.
 // Turning on resumes whatever was last playing, falling back to the first sound
 // the camera reports.
-func (conn *Connection) resolveSoundtrackSwitch(babyUID string, enabled bool) int32 {
+func (conn *Connection) resolveSoundtrackSwitch(babyUID string, enabled bool) string {
 	if !enabled {
-		return baby.SoundtrackOff
+		return baby.SoundtrackOffName
 	}
 
 	state := conn.StateManager.GetBabyState(babyUID)
-	if current := state.GetSoundtrack(); current != baby.SoundtrackOff {
-		return current
-	}
-
-	if catalog := state.GetAvailableSoundtracks(); len(catalog) > 0 {
-		return catalog[0].ID
-	}
-
-	// Nothing known yet; the first sound is the safest guess the camera will accept
-	return 1
-}
-
-// resolveSoundtrackName - maps a display name onto the id the camera reported
-func (conn *Connection) resolveSoundtrackName(babyUID string, name string) (int32, bool) {
-	if strings.EqualFold(name, baby.SoundtrackOffName) {
-		return baby.SoundtrackOff, true
-	}
-
-	for _, entry := range conn.StateManager.GetBabyState(babyUID).GetAvailableSoundtracks() {
-		if strings.EqualFold(entry.Name, name) {
-			return entry.ID, true
+	if current := state.GetSoundtrackName(); current != "" && !strings.EqualFold(current, baby.SoundtrackOffName) {
+		// Only resume a name the camera would recognise
+		for _, entry := range state.GetAvailableSoundtracks() {
+			if entry.Name == current {
+				return current
+			}
 		}
 	}
 
-	return 0, false
+	if catalog := state.GetAvailableSoundtracks(); len(catalog) > 0 {
+		return catalog[0].Name
+	}
+
+	// Nothing known yet; stopping is safer than guessing a filename
+	return baby.SoundtrackOffName
+}
+
+// resolveSoundtrackName - maps a display name from the select entity onto the
+// filename the camera expects
+func (conn *Connection) resolveSoundtrackName(babyUID string, name string) (string, bool) {
+	if name == "" || strings.EqualFold(name, baby.SoundtrackOffName) {
+		return baby.SoundtrackOffName, true
+	}
+
+	for _, entry := range conn.StateManager.GetBabyState(babyUID).GetAvailableSoundtracks() {
+		if strings.EqualFold(entry.DisplayName, name) || strings.EqualFold(entry.Name, name) {
+			return entry.Name, true
+		}
+	}
+
+	return "", false
 }
 
 func runMqtt(conn *Connection, attempt utils.AttemptContext) {

@@ -229,7 +229,6 @@ func (app *App) runWebsocket(babyUID string, conn *client.WebsocketConnection, c
 				processSensorData(babyUID, m.Response.SensorData, app.BabyStateManager)
 			} else if *m.Response.RequestType == client.RequestType_GET_CONTROL && m.Response.Control != nil {
 				processLight(babyUID, m.Response.Control, app.BabyStateManager)
-				processSoundtrack(babyUID, m.Response.Control, app.BabyStateManager)
 			} else if *m.Response.RequestType == client.RequestType_GET_SETTINGS && m.Response.Settings != nil {
 				processStandby(babyUID, m.Response.Settings, app.BabyStateManager)
 			} else if *m.Response.RequestType == client.RequestType_GET_STATUS && m.Response.Status != nil {
@@ -240,7 +239,8 @@ func (app *App) runWebsocket(babyUID string, conn *client.WebsocketConnection, c
 				processStandby(babyUID, m.Response.Settings, app.BabyStateManager)
 			} else if *m.Response.RequestType == client.RequestType_PUT_CONTROL && m.Response.Control != nil {
 				processLight(babyUID, m.Response.Control, app.BabyStateManager)
-				processSoundtrack(babyUID, m.Response.Control, app.BabyStateManager)
+			} else if *m.Response.RequestType == client.RequestType_GET_SOUNDTRACKS {
+				processSoundtracksResponse(babyUID, m.Response, app.BabyStateManager)
 			}
 		} else
 
@@ -251,9 +251,11 @@ func (app *App) runWebsocket(babyUID string, conn *client.WebsocketConnection, c
 				processSensorData(babyUID, m.Request.SensorData_, app.BabyStateManager)
 			} else if *m.Request.Type == client.RequestType_PUT_CONTROL && m.Request.Control != nil {
 				processLight(babyUID, m.Request.Control, app.BabyStateManager)
-				processSoundtrack(babyUID, m.Request.Control, app.BabyStateManager)
 			} else if *m.Request.Type == client.RequestType_PUT_SETTINGS && m.Request.Settings != nil {
 				processStandby(babyUID, m.Request.Settings, app.BabyStateManager)
+			} else if *m.Request.Type == client.RequestType_PUT_PLAYBACK && m.Request.Playback != nil {
+				// The camera broadcasts a playback stop to every connected session
+				processPlayback(babyUID, m.Request.Playback, app.BabyStateManager)
 			}
 		}
 	})
@@ -268,8 +270,8 @@ func (app *App) runWebsocket(babyUID string, conn *client.WebsocketConnection, c
 		app.MQTTConnection.RegisterVolumeHandler(func(level int32) {
 			sendVolumeCommand(level, conn)
 		})
-		app.MQTTConnection.RegisterSoundtrackHandler(func(soundtrackID int32) {
-			if err := sendSoundCommand(soundtrackID, conn); err != nil {
+		app.MQTTConnection.RegisterSoundtrackHandler(func(soundtrackName string) {
+			if err := sendSoundCommand(soundtrackName, conn); err != nil {
 				log.Warn().Err(err).Msg("Unable to send soundtrack command")
 			}
 		})
