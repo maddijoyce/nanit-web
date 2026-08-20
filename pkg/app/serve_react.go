@@ -149,6 +149,10 @@ func setupAPIRoutes(babies []baby.Baby, dataDir DataDirectories, stateManager *b
 			handleDebugControlAPI(w, r, babies, app)
 		})
 
+		http.HandleFunc("/api/debug/rest", func(w http.ResponseWriter, r *http.Request) {
+			handleDebugRestAPI(w, r, app)
+		})
+
 		http.HandleFunc("/api/debug/get", func(w http.ResponseWriter, r *http.Request) {
 			handleDebugGetAPI(w, r, babies, app)
 		})

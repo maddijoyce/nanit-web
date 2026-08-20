@@ -277,6 +277,10 @@ message Response {
   optional Control control = 13;
 
   repeated Soundtrack soundtracks = 12;
+
+  // Confirmed from a GET_PLAYBACK reply, which returned field 11 as an
+  // embedded message carrying status=STOPPED.
+  optional Playback playback = 11;
 }
 
 message Message {

@@ -8,13 +8,13 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/indiefan/home_assistant_nanit/pkg/baby"
 	"github.com/indiefan/home_assistant_nanit/pkg/message"
 	"github.com/indiefan/home_assistant_nanit/pkg/session"
 	"github.com/indiefan/home_assistant_nanit/pkg/utils"
-	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
@@ -182,8 +182,27 @@ func (c *NanitClient) Login() error {
 	return nil
 }
 
-// FetchAuthorized - makes authorized http request
+// FetchAuthorized - makes authorized http request and decodes the JSON body
 func (c *NanitClient) FetchAuthorized(req *http.Request, data interface{}) error {
+	body, err := c.FetchAuthorizedRaw(req)
+	if err != nil {
+		return err
+	}
+
+	if jsonErr := json.Unmarshal(body, data); jsonErr != nil {
+		log.Error().Err(jsonErr).Msg("Unable to decode response")
+		return fmt.Errorf("failed to decode response: %w", jsonErr)
+	}
+
+	return nil
+}
+
+// FetchAuthorizedRaw - makes an authorized http request and returns the raw body.
+//
+// The body is kept rather than streamed into a decoder: discarding it is what
+// made a missing nanit-api-version header look like an empty baby list instead
+// of a failure, and the raw payload is what the debug tooling reasons from.
+func (c *NanitClient) FetchAuthorizedRaw(req *http.Request) ([]byte, error) {
 	for i := 0; i < 2; i++ {
 		if c.SessionStore.Session.AuthToken != "" {
 			req.Header.Set("Authorization", c.SessionStore.Session.AuthToken)
@@ -192,7 +211,7 @@ func (c *NanitClient) FetchAuthorized(req *http.Request, data interface{}) error
 			res, clientErr := myClient.Do(req)
 			if clientErr != nil {
 				log.Error().Err(clientErr).Msg("HTTP request failed")
-				return fmt.Errorf("HTTP request failed: %w", clientErr)
+				return nil, fmt.Errorf("HTTP request failed: %w", clientErr)
 			}
 
 			defer res.Body.Close()
@@ -200,35 +219,21 @@ func (c *NanitClient) FetchAuthorized(req *http.Request, data interface{}) error
 			if res.StatusCode != 401 {
 				if res.StatusCode != 200 {
 					log.Error().Int("code", res.StatusCode).Msg("Server responded with unexpected status code")
-					return fmt.Errorf("server responded with unexpected status code: %d", res.StatusCode)
+					return nil, fmt.Errorf("server responded with unexpected status code: %d", res.StatusCode)
 				}
 
-				// Decoding straight from the body discards it, which makes an
-				// unexpected payload shape (e.g. a 200 with no "babies" key) look like
-				// an empty result rather than a failure. At debug level keep the raw
-				// body around so future breakage is diagnosable.
-				if zerolog.GlobalLevel() <= zerolog.DebugLevel {
-					rawBody, readErr := io.ReadAll(res.Body)
-					if readErr != nil {
-						log.Error().Err(readErr).Msg("Unable to read response body")
-						return fmt.Errorf("failed to read response body: %w", readErr)
-					}
-
-					log.Debug().
-						Str("url", req.URL.String()).
-						Str("body", utils.TruncateString(string(rawBody), maxLoggedBodyLength)).
-						Msg("Received authorized response")
-
-					res.Body = io.NopCloser(bytes.NewReader(rawBody))
+				body, readErr := io.ReadAll(res.Body)
+				if readErr != nil {
+					log.Error().Err(readErr).Msg("Unable to read response body")
+					return nil, fmt.Errorf("failed to read response body: %w", readErr)
 				}
 
-				jsonErr := json.NewDecoder(res.Body).Decode(data)
-				if jsonErr != nil {
-					log.Error().Err(jsonErr).Msg("Unable to decode response")
-					return fmt.Errorf("failed to decode response: %w", jsonErr)
-				}
+				log.Debug().
+					Str("url", req.URL.String()).
+					Str("body", utils.TruncateString(string(body), maxLoggedBodyLength)).
+					Msg("Received authorized response")
 
-				return nil
+				return body, nil
 			}
 
 			log.Info().Msg("Token might be expired. Will try to re-authenticate.")
@@ -236,13 +241,28 @@ func (c *NanitClient) FetchAuthorized(req *http.Request, data interface{}) error
 
 		if err := c.Authorize(); err != nil {
 			log.Error().Err(err).Msg("Re-authorization failed")
-			return fmt.Errorf("authorization failed on attempt %d: %w", i+1, err)
+			return nil, fmt.Errorf("authorization failed on attempt %d: %w", i+1, err)
 		}
 	}
 
 	errMsg := "Unable to make request due to failed authorization (2 attempts)"
 	log.Error().Msg(errMsg)
-	return errors.New(errMsg)
+	return nil, errors.New(errMsg)
+}
+
+// FetchPathRaw - GETs an arbitrary path on the Nanit API and returns the raw
+// body. Used by the protocol debug tooling to diff server-side state.
+func (c *NanitClient) FetchPathRaw(path string) ([]byte, error) {
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+
+	req, reqErr := http.NewRequest("GET", "https://api.nanit.com"+path, nil)
+	if reqErr != nil {
+		return nil, fmt.Errorf("failed to create request: %w", reqErr)
+	}
+
+	return c.FetchAuthorizedRaw(req)
 }
 
 // FetchBabies - fetches baby list

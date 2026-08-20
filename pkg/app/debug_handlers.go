@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/indiefan/home_assistant_nanit/pkg/baby"
@@ -240,7 +241,7 @@ func handleDebugSoundtracksAPI(w http.ResponseWriter, r *http.Request, babies []
 
 	res, err := awaitResponse(30 * time.Second)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("GET_SOUNDTRACKS failed: %v", err), http.StatusGatewayTimeout)
+		debugError(w, http.StatusGatewayTimeout, "GET_SOUNDTRACKS failed: %v", err)
 		return
 	}
 
@@ -291,7 +292,7 @@ func handleDebugGetAPI(w http.ResponseWriter, r *http.Request, babies []baby.Bab
 
 	typeValue, ok := client.RequestType_value[requestData.Type]
 	if !ok {
-		http.Error(w, fmt.Sprintf("unknown request type %q", requestData.Type), http.StatusBadRequest)
+		debugError(w, http.StatusBadRequest, "unknown request type %q", requestData.Type)
 		return
 	}
 	requestType := client.RequestType(typeValue)
@@ -320,7 +321,7 @@ func handleDebugGetAPI(w http.ResponseWriter, r *http.Request, babies []baby.Bab
 
 	res, err := awaitResponse(30 * time.Second)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("%v failed: %v", requestData.Type, err), http.StatusGatewayTimeout)
+		debugError(w, http.StatusGatewayTimeout, "%v failed: %v", requestData.Type, err)
 		return
 	}
 
@@ -380,6 +381,80 @@ func buildDebugGetRequest(requestType client.RequestType, flags []int32) *client
 	}
 
 	return req
+}
+
+// debugRestRequest - fetches a path on Nanit's cloud API
+type debugRestRequest struct {
+	// Path - path on api.nanit.com, e.g. "/babies" or "/babies/<uid>"
+	Path string `json:"path"`
+}
+
+// handleDebugRestAPI - GETs an arbitrary Nanit API path and returns the raw body.
+//
+// The camera websocket is not the only channel the phone app uses. A setting
+// the camera merely remembers — such as the selected soundtrack — may well be
+// stored server-side, in which case it never appears on the socket at all and
+// can only be found by diffing the REST payloads.
+func handleDebugRestAPI(w http.ResponseWriter, r *http.Request, app *App) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var requestData debugRestRequest
+	if err := json.NewDecoder(r.Body).Decode(&requestData); err != nil {
+		debugError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	if requestData.Path == "" {
+		debugError(w, http.StatusBadRequest, "path is required")
+		return
+	}
+
+	// Only paths on the Nanit API; this must not become a general fetcher
+	if strings.Contains(requestData.Path, "://") {
+		debugError(w, http.StatusBadRequest, "path must be a path, not a URL")
+		return
+	}
+
+	if app.RestClient == nil {
+		debugError(w, http.StatusServiceUnavailable, "no Nanit API client")
+		return
+	}
+
+	log.Warn().Str("path", requestData.Path).Msg("DEBUG: fetching Nanit API path")
+
+	body, err := app.RestClient.FetchPathRaw(requestData.Path)
+	if err != nil {
+		debugError(w, http.StatusBadGateway, "%v", err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	// Pass the payload through untouched when it is JSON, so it can be diffed
+	// directly; fall back to a wrapper when it is not.
+	if json.Valid(body) {
+		w.Write(body)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"path": requestData.Path,
+		"raw":  string(body),
+	})
+}
+
+// debugError - responds with a JSON error, so a piped `jq` still parses the
+// output instead of choking on a plain-text error body
+func debugError(w http.ResponseWriter, status int, format string, args ...interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"error":  fmt.Sprintf(format, args...),
+		"status": status,
+	})
 }
 
 // resolveDebugBabyUID - validates an explicit UID, or picks the only baby when

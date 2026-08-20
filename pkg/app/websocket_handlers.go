@@ -457,6 +457,35 @@ func processPlayback(babyUID string, playback *client.Playback, stateManager *ba
 // naming the track
 const soundtrackUnknownName = "Playing"
 
+// requestPlaybackState - asks the camera what it is currently playing.
+//
+// GET_PLAYBACK answers with Response.playback. Nothing else reports playback
+// state: the camera broadcasts a stop but never a start or a track change, so
+// polling this is the only way to learn what is playing after the fact.
+func requestPlaybackState(babyUID string, conn *client.WebsocketConnection, stateManager *baby.StateManager) {
+	awaitResponse := conn.SendRequest(client.RequestType_GET_PLAYBACK, &client.Request{})
+
+	go func() {
+		res, err := awaitResponse(30 * time.Second)
+		if err != nil {
+			log.Warn().Err(err).Str("baby_uid", babyUID).Msg("GET_PLAYBACK request failed")
+			return
+		}
+
+		// Any field the schema still cannot name is worth seeing: the track
+		// selector is expected to show up here once something is playing.
+		if unknown := client.DescribeUnknownFields(res); len(unknown) > 0 {
+			log.Info().
+				Str("baby_uid", babyUID).
+				Interface("unknown_fields", unknown).
+				Str("raw", res.String()).
+				Msg("GET_PLAYBACK response carried unmapped fields")
+		}
+
+		processPlayback(babyUID, res.GetPlayback(), stateManager)
+	}()
+}
+
 // requestSoundtracks - asks the camera for its built-in sound catalog
 func requestSoundtracks(babyUID string, conn *client.WebsocketConnection, stateManager *baby.StateManager) {
 	awaitResponse := conn.SendRequest(client.RequestType_GET_SOUNDTRACKS, &client.Request{})

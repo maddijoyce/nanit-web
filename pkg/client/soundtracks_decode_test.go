@@ -45,3 +45,59 @@ func TestDecodeRealSoundtracksResponse(t *testing.T) {
 	// Nothing should be left unmapped now
 	assert.Empty(t, client.DescribeUnknownFields(res), "soundtracks should decode through the schema")
 }
+
+// Captured from a GET_PLAYBACK reply: Response field 11 is an embedded message
+// carrying status=STOPPED, i.e. a Playback.
+func TestDecodeRealPlaybackResponse(t *testing.T) {
+	var inner []byte
+	inner = protowire.AppendTag(inner, 1, protowire.VarintType)
+	inner = protowire.AppendVarint(inner, uint64(client.Playback_STOPPED))
+
+	var buf []byte
+	buf = protowire.AppendTag(buf, 1, protowire.VarintType)
+	buf = protowire.AppendVarint(buf, 9)
+	buf = protowire.AppendTag(buf, 2, protowire.VarintType)
+	buf = protowire.AppendVarint(buf, uint64(client.RequestType_GET_PLAYBACK))
+	buf = protowire.AppendTag(buf, 3, protowire.VarintType)
+	buf = protowire.AppendVarint(buf, 200)
+	buf = protowire.AppendTag(buf, 11, protowire.BytesType)
+	buf = protowire.AppendBytes(buf, inner)
+
+	res := &client.Response{}
+	require.NoError(t, proto.Unmarshal(buf, res))
+
+	require.NotNil(t, res.GetPlayback())
+	assert.Equal(t, client.Playback_STOPPED, res.GetPlayback().GetStatus())
+
+	// Field 11 must no longer be reported as unmapped
+	assert.Empty(t, client.DescribeUnknownFields(res))
+}
+
+// Once something is playing, any extra field inside Playback should surface
+// with a path naming it, which is how the track selector will be found.
+func TestUnknownFieldsInsidePlaybackAreLabelled(t *testing.T) {
+	var inner []byte
+	inner = protowire.AppendTag(inner, 1, protowire.VarintType)
+	inner = protowire.AppendVarint(inner, uint64(client.Playback_STARTED))
+	inner = protowire.AppendTag(inner, 6, protowire.BytesType)
+	inner = protowire.AppendString(inner, "Wind.wav")
+
+	var buf []byte
+	buf = protowire.AppendTag(buf, 1, protowire.VarintType)
+	buf = protowire.AppendVarint(buf, 9)
+	buf = protowire.AppendTag(buf, 2, protowire.VarintType)
+	buf = protowire.AppendVarint(buf, uint64(client.RequestType_GET_PLAYBACK))
+	buf = protowire.AppendTag(buf, 3, protowire.VarintType)
+	buf = protowire.AppendVarint(buf, 200)
+	buf = protowire.AppendTag(buf, 11, protowire.BytesType)
+	buf = protowire.AppendBytes(buf, inner)
+
+	res := &client.Response{}
+	require.NoError(t, proto.Unmarshal(buf, res))
+
+	unknown := client.DescribeUnknownFields(res)
+	require.Len(t, unknown, 1)
+	assert.Equal(t, "Response.playback", unknown[0].Path)
+	assert.Equal(t, int32(6), unknown[0].Tag)
+	assert.Equal(t, `"Wind.wav"`, unknown[0].Value)
+}

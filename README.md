@@ -65,7 +65,7 @@ docker run -d \
 | `NANIT_EVENTS_POLLING` | `false` | Enable polling for event messages |
 | `NANIT_EVENTS_POLLING_INTERVAL` | `30` | Seconds between event polling requests |
 | `NANIT_EVENTS_MESSAGE_TIMEOUT` | `300` | Seconds after which to disregard old events |
-| `NANIT_DEBUG_CONTROL` | `false` | Expose the `/api/debug/*` protocol experiment endpoints. Sends operator-supplied bytes to the camera — leave off in normal use. See [SOUNDTRACK_CAPTURE.md](SOUNDTRACK_CAPTURE.md) |
+| `NANIT_DEBUG_CONTROL` | `false` | Expose the `/api/debug/*` protocol probe endpoints (`get`, `playback`, `soundtracks`, `rest`). Sends operator-supplied bytes to the camera and reads your Nanit account over its API — leave off in normal use. See [SOUNDTRACK_CAPTURE.md](SOUNDTRACK_CAPTURE.md) |
 
 **Note:** Nanit credentials (email/password) are configured via the web dashboard at `http://localhost:8080`, not through environment variables.
 

@@ -70,39 +70,55 @@ message Response {
 A unit test decodes the exact captured bytes and asserts nothing is left
 unmapped.
 
+### GET_PLAYBACK reports playback state (Response field 11)
+
+`GET_PLAYBACK` (19) had never been called by this project. It answers with an
+embedded message on field 11:
+
+```
+unknown_fields=[{"path":"Response","tag":11,"wire_type":"bytes",
+                 "nested":[{"tag":1,"wire_type":"varint","value":1}]}]
+```
+
+Field 1 = 1 is `Playback.Status.STOPPED`, so field 11 is a `Playback`. Now
+mapped as `Response.playback = 11`, and requested at startup.
+
+**This is the most promising place left to look.** It was read while nothing was
+playing, so it reported only a status. If the camera tracks *which* track is
+selected, it should appear here once something is playing.
+
 ### Not yet solved: how to choose which track plays
 
 `PUT_PLAYBACK` with `status:STARTED` plays **the track the camera already has
-selected**. It does not select one. Confirmed by playing "Wind" from the phone
-app, stopping it, then asking this bridge for `Birds.wav` — playback started,
-on Wind.
+selected**. Confirmed by playing "Wind" from the phone app, stopping it, then
+asking this bridge for `Birds.wav` — playback started, on Wind.
 
-A sweep of candidate fields on `Playback`, sending the filename as a
-length-delimited value, gave a clean split:
+Two sweeps of candidate fields on `Playback`, taken together:
 
-| Tags | Result | Reading |
-|---|---|---|
-| 2, 5, 6, 7, 8 | Played, track unchanged | Ignored — protobuf discards fields the receiver does not know |
-| 3, 4 | **Request timed out** | The camera *does* map these tags, and rejected the message |
+| Tags | As bytes | As varint | Reading |
+|---|---|---|---|
+| 2, 5, 6, 7, 8 | Played, no change | — | Unknown to the camera; silently discarded |
+| 3, 4 | **Timeout** | 200 OK, no change | Real fields, varint-typed, but not the selector |
 
-That timeout is the most useful result in the whole exercise. An unknown field
-is silently dropped; a *known* field sent with the wrong wire type makes the
-parse fail, so the camera never replies. **`Playback` has real fields at 3 and
-4** that this schema does not know about, and neither is a string.
+The bytes/varint split is what pins this down. An unknown field is dropped
+whatever its wire type; a *known* field sent with the wrong wire type fails to
+parse, and the camera never replies. So tags 3 and 4 are genuine varint fields
+on `Playback` — but values 0-3 on either changed nothing, so neither selects the
+track.
 
-The obvious candidate: a **varint** — most likely an index into the catalog, in
-the order `GET_SOUNDTRACKS` returned it:
+Nothing on `Playback` selects a track. The selection lives elsewhere.
 
-| Index | Sound |
-|---|---|
-| 0 | White Noise |
-| 1 | Birds |
-| 2 | Waves |
-| 3 | Wind |
+### Other probes, for the record
+
+- `GET_STATUS`, `GET_CONTROL` (no flags): 200, **no** unmapped fields.
+- `GET_SETTINGS` via the debug endpoint: timed out. Worth retrying; the startup
+  path issues it successfully without awaiting a matching reply.
+- `GET_CONTROL` with selector flags 1-8: failed. Probably `ptz` (tag 1) on a
+  camera without it — narrow to `[2,3,4]` plus one unmapped tag at a time.
 
 ---
 
-## 2. Next experiment: varints on tags 3 and 4
+## 2. Next experiments
 
 ### Enable the harness
 
@@ -111,104 +127,82 @@ NANIT_LOG_LEVEL=trace
 NANIT_DEBUG_CONTROL=true
 ```
 
-You should see `WRN NANIT_DEBUG_CONTROL is enabled...` on startup. Follow the
-log in a second terminal (`docker logs -f nanit`).
+> Shell note: `zsh` does not treat `#` as a comment when pasted interactively.
+> Paste the commands without the comment lines, or the shell reports
+> `command not found: #`.
 
-### Try an index
+### A. Read playback state *while a track is playing* ← start here
 
-Volume down, camera not in use. Ask for **Birds** (index 1) while something
-other than Birds is the camera's current selection, so a change is unmistakable:
+This is read-only and needs no guessing.
 
-```bash
-curl -s -X POST http://localhost:8080/api/debug/playback \
-  -H 'Content-Type: application/json' \
-  -d '{"tag":3,"varint":true,"value":1}' | jq
-```
-
-Stop between attempts:
+1. In the Nanit app, start **Wind**.
+2. While it plays:
 
 ```bash
-curl -s -X POST http://localhost:8080/api/debug/playback \
-  -H 'Content-Type: application/json' -d '{"stop":true}'
-```
-
-Interpreting it:
-
-| Outcome | Meaning |
-|---|---|
-| **Birds** plays | Tag 3 is the selector, as a catalog index |
-| Something plays, but the same track as before | Tag 3 exists but is not the selector — try tag 4 |
-| Timeout again | Wrong wire type for this tag too; try `fixed32`-shaped values or a nested message |
-| Non-200 status | The camera parsed it and refused — read `status_message` |
-
-Sweep both tags and a few indices:
-
-```bash
-for tag in 3 4; do
-  for value in 0 1 2 3; do
-    echo "--- tag $tag value $value"
-    curl -s -X POST http://localhost:8080/api/debug/playback \
-      -H 'Content-Type: application/json' \
-      -d "{\"tag\":$tag,\"varint\":true,\"value\":$value}" \
-      | jq -c '{tag,value,status:.status_code,msg:.status_message}'
-    sleep 4
-    curl -s -X POST http://localhost:8080/api/debug/playback \
-      -H 'Content-Type: application/json' -d '{"stop":true}' > /dev/null
-    sleep 1
-  done
-done
-```
-
-Note which `(tag, value)` plays which sound. If the mapping is an index, you
-should be able to hit all four.
-
-### If that fails: find where the selection is stored
-
-Selection may not live on `Playback` at all — the camera clearly *remembers* it
-between sessions, which means it is readable somewhere. The generic probe issues
-any GET request and dumps everything, including fields the schema cannot name:
-
-```bash
-# Ask for every Control item, including tags the schema has no name for.
-# GetControl is a filtered request: the startup code asks only for nightLight,
-# so anything else the camera could report has never been visible.
 curl -s -X POST http://localhost:8080/api/debug/get \
-  -H 'Content-Type: application/json' \
-  -d '{"type":"GET_CONTROL","flags":[1,2,3,4,5,6,7,8]}' | jq
-
-# Settings are the other plausible home for a remembered selection
-curl -s -X POST http://localhost:8080/api/debug/get \
-  -H 'Content-Type: application/json' \
-  -d '{"type":"GET_SETTINGS"}' | jq
+  -H 'Content-Type: application/json' -d '{"type":"GET_PLAYBACK"}' | jq
 ```
 
-**The decisive move is a diff.** The camera does not broadcast track changes, but
-it must store the selection:
+3. Look at `unknown_fields`. Anything inside the playback message is reported
+   with the path `Response.playback`, e.g.:
 
-1. In the Nanit app, select **Wind**.
-2. Run both probes above, save the output.
-3. In the app, switch to **Birds**.
-4. Run both probes again.
-5. Diff.
+```json
+{"path":"Response.playback","tag":6,"wire_type":"bytes","value":"\"Wind.wav\""}
+```
 
-Whatever field changed between the two is the selection. If it is a string you
-will see `"Birds.wav"`; if it is an index you will see a small integer change.
-Paste the diff back and it can be mapped.
+4. Switch to **Birds** in the app and repeat. Whatever changes is the selector.
 
-Worth probing too, since each may carry state the schema misses:
+If `Response.playback` shows only `status` while a track is playing, the camera
+does not report the selection over the socket at all, and B becomes the lead.
+
+### B. Diff Nanit's cloud API
+
+The phone app talks to `api.nanit.com` as well as the camera. A remembered
+setting may be stored server-side, which would explain why changing tracks
+produces nothing on the socket.
 
 ```bash
-for t in GET_STATUS GET_SETTINGS GET_CONTROL GET_PLAYBACK; do
-  echo "=== $t"
-  curl -s -X POST http://localhost:8080/api/debug/get \
-    -H 'Content-Type: application/json' -d "{\"type\":\"$t\"}" \
-    | jq -c '{type,status:.status_code,unknown:.unknown_fields}'
-done
+curl -s -X POST http://localhost:8080/api/debug/rest \
+  -H 'Content-Type: application/json' -d '{"path":"/babies"}' | jq
 ```
 
-`GET_PLAYBACK` (19) is especially interesting — it is in the enum but this
-project has never called it, and a getter for playback state would be the
-natural place to find the selected track.
+The response is passed through untouched so it can be diffed directly:
+
+```bash
+# with Wind selected
+curl -s -X POST http://localhost:8080/api/debug/rest \
+  -H 'Content-Type: application/json' -d '{"path":"/babies"}' | jq -S . > wind.json
+
+# switch to Birds in the app, then
+curl -s -X POST http://localhost:8080/api/debug/rest \
+  -H 'Content-Type: application/json' -d '{"path":"/babies"}' | jq -S . > birds.json
+
+diff wind.json birds.json
+```
+
+Other paths worth trying, using your camera UID:
+
+```bash
+/babies/<uid>
+/babies/<uid>/settings
+/babies/<uid>/soundtracks
+/babies/<uid>/playback
+```
+
+A 404 is a fine answer — it rules a path out. Anything that returns JSON
+mentioning a sound name is the thing.
+
+### C. Re-run the Control probe, narrowed
+
+```bash
+curl -s -X POST http://localhost:8080/api/debug/get \
+  -H 'Content-Type: application/json' -d '{"type":"GET_CONTROL","flags":[2,3,4]}' | jq
+```
+
+Then add one unmapped selector tag at a time (`[2,3,4,5]`, `[2,3,4,6]`, …). A
+selector the camera knows may unlock a `Control` field that is never otherwise
+reported. Debug endpoints now return JSON on failure, so `jq` keeps working when
+a request times out.
 
 ### Record the answer
 
@@ -221,25 +215,17 @@ const (
 )
 ```
 
-Flipping `SoundtrackSelectionVerified` to `true` is what publishes the Home
-Assistant **select** entity. It is deliberately withheld while selection does
-not work, because a dropdown that silently plays a different sound is worse on a
-baby monitor than no dropdown at all. If the selector turns out to be a varint
-index rather than a name, `sendSoundCommand` in
-`pkg/app/websocket_handlers.go` needs the catalog index instead of the filename
-— the catalog is already ordered as the camera returned it.
+Flipping `SoundtrackSelectionVerified` publishes the Home Assistant **select**
+entity. It is withheld while selection does not work, because a dropdown that
+silently plays a different sound is worse on a baby monitor than no dropdown.
 
-Once confirmed, fold it into `pkg/client/websocket.proto`:
+If the selector turns out to live somewhere other than `Playback` — a different
+request type, or the cloud API — `sendSoundCommand` in
+`pkg/app/websocket_handlers.go` is the single place that needs rerouting.
 
-```protobuf
-message Playback {
-  required Status status = 1;
-  optional int32 soundtrack = 3;   // the confirmed tag and type
-}
-```
-
-Regenerate with protoc **29.3** and protoc-gen-go **v1.36.5**, which reproduce
-the committed `websocket.pb.go` byte for byte:
+Once confirmed, fold the field into `pkg/client/websocket.proto` and regenerate
+with protoc **29.3** and protoc-gen-go **v1.36.5**, which reproduce the
+committed `websocket.pb.go` byte for byte:
 
 ```bash
 go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.5

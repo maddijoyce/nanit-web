@@ -239,6 +239,8 @@ func (app *App) runWebsocket(babyUID string, conn *client.WebsocketConnection, c
 				processStandby(babyUID, m.Response.Settings, app.BabyStateManager)
 			} else if *m.Response.RequestType == client.RequestType_PUT_CONTROL && m.Response.Control != nil {
 				processLight(babyUID, m.Response.Control, app.BabyStateManager)
+			} else if *m.Response.RequestType == client.RequestType_GET_PLAYBACK && m.Response.Playback != nil {
+				processPlayback(babyUID, m.Response.Playback, app.BabyStateManager)
 			} else if *m.Response.RequestType == client.RequestType_GET_SOUNDTRACKS {
 				processSoundtracksResponse(babyUID, m.Response, app.BabyStateManager)
 			}
@@ -302,6 +304,10 @@ func (app *App) runWebsocket(babyUID string, conn *client.WebsocketConnection, c
 	// Ask for the built-in soundtrack catalog. The response shape is unmapped,
 	// so this logs the raw fields rather than decoding through the schema.
 	requestSoundtracks(babyUID, conn, app.BabyStateManager)
+
+	// Ask what is playing right now. Nothing else reports it: the camera
+	// broadcasts a stop but never a start or a track change.
+	requestPlaybackState(babyUID, conn, app.BabyStateManager)
 
 	// Ask for logs
 	// conn.SendRequest(client.RequestType_GET_LOGS, &client.Request{
