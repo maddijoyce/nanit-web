@@ -145,6 +145,16 @@ type debugPlaybackRequest struct {
 	// SoundtrackValue is not set
 	SoundtrackText string `json:"soundtrack_text,omitempty"`
 
+	// RequestTag - protobuf field number for one extra field on the Request
+	// envelope itself, rather than on Playback.
+	//
+	// Request has tags 3, 9, 10, 11, 14 and 19+ free. Unlikely to carry a
+	// playback mode, since its fields are per request type, but it is the last
+	// untested surface on the play command.
+	RequestTag int32 `json:"request_tag,omitempty"`
+	// RequestValue - varint payload for RequestTag
+	RequestValue uint64 `json:"request_value,omitempty"`
+
 	// Tag - protobuf field number for one extra field on Playback
 	Tag int32 `json:"tag,omitempty"`
 	// Value - varint payload for Tag. Used when UseVarint is set.
@@ -232,9 +242,12 @@ func handleDebugPlaybackAPI(w http.ResponseWriter, r *http.Request, babies []bab
 		Str("sent", playback.String()).
 		Msg("DEBUG: sending experimental PUT_PLAYBACK")
 
-	awaitResponse := conn.SendRequest(client.RequestType_PUT_PLAYBACK, &client.Request{
-		Playback: playback,
-	})
+	req := &client.Request{Playback: playback}
+	if requestData.RequestTag > 0 {
+		client.SetUnknownVarintField(req, requestData.RequestTag, requestData.RequestValue)
+	}
+
+	awaitResponse := conn.SendRequest(client.RequestType_PUT_PLAYBACK, req)
 
 	result := map[string]interface{}{
 		"baby_uid": babyUID,

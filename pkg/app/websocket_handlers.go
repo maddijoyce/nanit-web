@@ -453,6 +453,15 @@ func verifyPlaybackState(babyUID string, playback *client.Playback, stateManager
 		return
 	}
 
+	// Logged at info because the pattern of these broadcasts answers an open
+	// question: if a looping sound produces a stop and a start every clip
+	// length, something outside the camera is re-issuing the command.
+	log.Info().
+		Str("baby_uid", babyUID).
+		Str("status", playback.GetStatus().String()).
+		Str("soundtrack", client.PlaybackSoundtrackName(playback)).
+		Msg("Camera broadcast a playback change")
+
 	if *playback.Status != client.Playback_STOPPED {
 		processPlayback(babyUID, playback, "camera-broadcast", stateManager)
 		return
