@@ -169,24 +169,8 @@ Force-quitting the Nanit app leaves a looping sound playing. So the repeat is
 camera-side state, not the app re-issuing a play command each time a clip ends.
 Something tells the camera to keep going, and it remembers.
 
-#### Where it is not
-
-`PUT_PLAYBACK` has been swept thoroughly and carries nothing else:
-
-| Probe | Result | Reading |
-|---|---|---|
-| `Playback` tags 2, 5-8, bytes | 200, ignored | Not known fields |
-| `Playback` tags 9-16, varint | 200, ignored | Not known fields |
-| `Playback` tags 3, 4, bytes | Timeout | Known — the two Soundtrack messages |
-| `Soundtrack.type` = 1 | `Bad Request: User storage is not supported` | Storage location, not a mode |
-| `Soundtrack.type` = 2 | Timeout | Out of range for a small enum |
-
-That error message is worth keeping: `Soundtrack.type` says *where the file
-lives* — 0 for the camera's built-ins, 1 for user storage, which this model does
-not support. It is not the repeat mode, and the schema now says so.
-
-Neither `GET_SOUNDTRACKS` nor `GET_PLAYBACK` reports the per-track setting, and
-`GET_PLAYBACK` looks identical whichever timer the app has set.
+The camera also remembers it: force-quitting the Nanit app leaves a looping
+sound playing.
 
 #### Everywhere it is not
 
@@ -198,7 +182,8 @@ The search space on the play command is now exhausted:
 | `Playback` tags 9-16 | varint | Ignored — not known fields |
 | `Playback` tags 3, 4 | bytes | Timeout — these are the Soundtrack messages |
 | `Soundtrack` tags 3-6 | varint | Ignored — not known fields |
-| `Soundtrack.type` 1 / 2 | varint | Storage location, not a mode |
+| `Soundtrack.type` = 1 | varint | `Bad Request: User storage is not supported` — storage location, not a mode |
+| `Soundtrack.type` = 2 | varint | Timeout — out of range for a small enum |
 | `Settings` | full read, diffed across an app change | No field moves |
 | `GET_SOUNDTRACKS` | full read | Only `{type, name}` per sound |
 | `GET_PLAYBACK` | full read while playing | Only status and the two Soundtracks |
@@ -276,6 +261,25 @@ the track here is the only way to keep a sound playing. That is a worse
 imitation than the camera's own seamless loop — there will be a small gap at
 each clip boundary — but it works, and everything needed for it is already in
 place. See the design sketch below.
+
+#### Design sketch: repeating the track here
+
+A fallback, and a worse imitation than the camera's own loop — restarting from
+here leaves a gap at every clip boundary, where the camera's is seamless. But it
+works, and a confirmed stop already arrives through `requestPlaybackState`,
+which knows the connection and can send the play command again:
+
+- remember the track and when it started, per baby
+- on a confirmed stop, start it again
+- learn each clip's length from the first full play, and treat a stop well short
+  of that as somebody stopping deliberately rather than a clip ending, so a stop
+  from the phone is honoured
+- bound the total run, so a sound cannot play forever through a bug
+- clear the intent whenever a stop is commanded from here
+
+The unpleasant case is a stop from the Nanit app landing near a clip boundary,
+which is indistinguishable from the clip ending. The learned clip length narrows
+that window but cannot close it.
 
 #### A note on ordering
 
