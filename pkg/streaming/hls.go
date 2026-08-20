@@ -125,7 +125,7 @@ func (h *HLSTranscoder) Start() error {
 		// hlsSegmentSeconds long (see the note on hlsSegmentSeconds)
 		"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", hlsSegmentSeconds),
 		"-sc_threshold", "0", // No extra keyframes on scene changes
-		"-c:a", "aac", // Audio codec
+		"-c:a", "copy", // Cam already sends AAC-LC, no need to re-encode
 		"-f", "hls", // HLS format
 		"-hls_time", fmt.Sprintf("%d", hlsSegmentSeconds),
 		"-hls_list_size", fmt.Sprintf("%d", hlsPlaylistSize),
