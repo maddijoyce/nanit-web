@@ -254,6 +254,36 @@ requests — `PUT_STING_START` (30), `PUT_STING_STOP` (31), `PUT_STING_STATUS`
 (32), `PUT_STING_ALERT` (34) and `PUT_STING_TEST` (37) all exist in the enum
 with no idea what they drive.
 
+#### STING is unrelated
+
+`GET_STING_STATUS` answers on an unmapped `Response` field 21:
+
+```
+21:{1: 6}
+```
+
+Identical across all four combinations of Birds playing or stopped and set to
+30min or loop. Whatever "sting" is, it does not carry the soundtrack mode.
+
+#### Still untested
+
+The sweep above has only been run for STING. What remains:
+
+- **The other GET types.** Fourteen of the twenty-one have never been called.
+- **`GET_LOGS` with a `logs_url`.** The camera uploads its own logs to a URL you
+  host. Its own logging may name the setting outright, which would be worth more
+  than any amount of field guessing. Needs somewhere to receive the upload.
+- **Nanit's cloud API, diffed across a timer change.** Proposed but never run:
+  the `/babies` payload before and after changing a track's timer in the app,
+  plus `/babies/<uid>`, `/babies/<uid>/settings` and
+  `/babies/<uid>/soundtracks`.
+- **Asymmetric Soundtrack fields.** Every play so far has set fields 3 and 4 to
+  the same track. Setting only one, or setting them to different tracks, has not
+  been tried — if field 4 means "play this next", that is where a loop would
+  live.
+- **The PUT_STING_* family.** Writes, so worth leaving until the reads are
+  exhausted.
+
 #### If the sweep comes up empty
 
 Then the instruction is not reachable from the local websocket, and repeating
