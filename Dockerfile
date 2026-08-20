@@ -1,5 +1,5 @@
 # Frontend build stage
-FROM node:18-alpine AS frontend-build
+FROM --platform=$BUILDPLATFORM node:18-alpine AS frontend-build
 
 WORKDIR /app/frontend
 
@@ -24,19 +24,19 @@ RUN apt-get update && apt-get install -y \
     gcc-aarch64-linux-gnu libc6-dev-arm64-cross \
     && rm -rf /var/lib/apt/lists/*
 
-ADD cmd /app/cmd
-ADD pkg /app/pkg
+WORKDIR /app
+
+# Dependencies first: source changes below must not invalidate the module cache
 ADD go.mod /app/
 ADD go.sum /app/
+RUN go mod download
+
+ADD cmd /app/cmd
+ADD pkg /app/pkg
 ADD scripts /app/scripts
 
 # Copy built frontend files to replace old web directory
 COPY --from=frontend-build /app/frontend/dist /app/web
-
-WORKDIR /app
-
-# Download dependencies
-RUN go mod download
 
 ARG CI_COMMIT_SHORT_SHA
 ARG TARGETOS TARGETARCH
