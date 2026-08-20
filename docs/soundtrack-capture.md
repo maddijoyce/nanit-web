@@ -206,65 +206,76 @@ The search space on the play command is now exhausted:
 Nothing on the camera changes when the app's per-track timer changes, and
 nothing in the play command carries a mode.
 
-#### The premise worth re-testing
+#### The camera loops internally — the silence proves it
 
-The reasoning so far rested on one inference: **a looping sound survives the
-Nanit app being force-quit, therefore the camera is looping by itself.**
+Playing a looping sound from the Nanit app produces **no websocket traffic at
+all**. Not one broadcast for several minutes.
 
-That does not follow. The camera holds a permanent connection to Nanit's cloud,
-and the cloud could just as easily be re-issuing the play command each time a
-clip ends. Killing the phone app would not interrupt that.
+That rules out the cloud re-issuing the command. The camera announces a stop
+whenever playback ends — that is exactly what is seen after a play from here,
+once the clip runs out. If anything were restarting the track every clip length,
+each cycle would end, and each ending would produce a stop broadcast. Instead
+there is nothing, which means playback never ends: the camera is looping the
+audio itself, seamlessly.
 
-If the cloud is the repeater, there is no camera-side mode to find — which
-matches every negative result above — and the right implementation here is to do
-the same thing: re-issue the command when a clip finishes.
+The asymmetry that looked strange resolves the same way. The camera broadcasts
+stops and not starts, so a loop that never stops is silent by definition, while
+a one-shot play from here is followed by a stop broadcast when the clip
+finishes.
 
-#### The observation that settles it
+#### So the loop instruction reaches the camera by another route
 
-Playback broadcasts are now logged at info, so this needs no special tooling:
+Everything on the local websocket has been ruled out — the play command in every
+field, the settings, the catalog, and playback state itself. Yet the camera
+plainly holds a "loop this" instruction.
 
-1. Start a sound from the Nanit app with **loop** selected.
-2. Watch the log for two or three minutes.
+The most likely explanation left is that the app does not use this websocket for
+soundtracks at all. It talks to Nanit's cloud, and the cloud instructs the
+camera over the camera's own cloud connection, which is invisible from here.
+`GET_PLAYBACK` still reports the result, because the camera knows what it is
+playing either way.
+
+#### Sweep the request types nobody has called
+
+Before accepting that, there are twenty-one `GET_*` request types and this
+project has only ever used five. Any of them could expose where the mode lives,
+and reading is safe:
 
 ```bash
-docker logs -f nanit 2>&1 | grep "Camera broadcast a playback change"
+for t in GET_STREAMING GET_CONTROL GET_STATUS GET_SENSOR_DATA GET_UCTOKENS \
+         GET_FIRMWARE GET_PLAYBACK GET_SOUNDTRACKS GET_STATUS_NETWORK \
+         GET_LIST_NETWORKS GET_BANDWIDTH GET_AUDIO_STREAMING GET_WIFI_SETUP \
+         GET_STING_STATUS GET_UOM_URI GET_UOM GET_AUTH_KEY GET_STING_START \
+         GET_LOGS_URI; do
+  echo "=== $t"
+  curl -s -X POST http://localhost:8080/api/debug/get \
+    -H 'Content-Type: application/json' -d "{\"type\":\"$t\"}" \
+    | jq -c '{status:.status_code, error, raw:.raw}'
+done
 ```
 
-**Repeated stop/start pairs, one per clip length** (~20s for Birds) mean
-something outside the camera is driving the repeat. The camera is not looping;
-it is being told to play again, and this project can do exactly the same.
+Three kinds of answer are all useful:
 
-**Silence for the whole time** means the camera really does loop internally, and
-the instruction reaches it by a route not yet found — most likely Nanit's cloud
-API rather than the local websocket, which the REST probe can chase:
+- **Data back.** Read it, then change a track's timer in the app and re-run to
+  see whether anything moves.
+- **`missed 'getX' field`.** A selector this schema lacks, exactly like
+  `getSettings` was. Sweep `selector_tag` over the free `Request` tags — 3, 9,
+  10, 11, 14, 19 and up — to find it.
+- **A plain error.** That type is unsupported on this camera; move on.
 
-```bash
-curl -s -X POST http://localhost:8080/api/debug/rest \
-  -H 'Content-Type: application/json' -d '{"path":"/babies"}' | jq -S . > before.json
-# change a track's timer in the app, then
-curl -s -X POST http://localhost:8080/api/debug/rest \
-  -H 'Content-Type: application/json' -d '{"path":"/babies"}' | jq -S . > after.json
-diff before.json after.json
-```
+`GET_STING_STATUS` (36) and `GET_STING_START` (46) are worth trying first. A
+"sting" is a short audio cue, and this project has never touched that family of
+requests — `PUT_STING_START` (30), `PUT_STING_STOP` (31), `PUT_STING_STATUS`
+(32), `PUT_STING_ALERT` (34) and `PUT_STING_TEST` (37) all exist in the enum
+with no idea what they drive.
 
-#### If it turns out to be a re-issue loop
+#### If the sweep comes up empty
 
-Then repeating here is not a workaround, it is the same mechanism. The pieces
-are already in place: a confirmed stop arrives through `requestPlaybackState`,
-which knows the connection and can send the play command again. The design that
-was drafted and then set aside:
-
-- remember the track and when it started, per baby
-- on a confirmed stop, restart it
-- learn each clip's length from the first full play, and treat a stop well short
-  of that as somebody stopping deliberately rather than a clip ending, so a stop
-  from the phone is honoured
-- bound the total run so a sound cannot play forever through a bug
-- clear the intent whenever a stop is commanded from here
-
-The one genuinely unpleasant case is a stop from the Nanit app landing close to
-a clip boundary, which is indistinguishable from the clip ending. The learned
-clip length narrows it but cannot eliminate it.
+Then the instruction is not reachable from the local websocket, and repeating
+the track here is the only way to keep a sound playing. That is a worse
+imitation than the camera's own seamless loop — there will be a small gap at
+each clip boundary — but it works, and everything needed for it is already in
+place. See the design sketch below.
 
 #### A note on ordering
 
