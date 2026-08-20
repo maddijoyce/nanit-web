@@ -355,3 +355,25 @@ func GetUnknownBytesField(m proto.Message, tag int32) ([]byte, bool) {
 
 	return nil, false
 }
+
+// EncodeSelectorMessage - builds the body of an embedded message with the given
+// field numbers set to boolean true.
+//
+// Several GET requests carry a selector sub-message of booleans (GetStatus.all,
+// GetControl.nightLight and so on). When the selector itself is missing from the
+// schema, this produces one that can be attached as an unknown field — which is
+// how a request the camera rejects with "missed 'getX' field" can be satisfied
+// without knowing the generated type.
+func EncodeSelectorMessage(flags []int32) []byte {
+	body := make([]byte, 0, len(flags)*2)
+	for _, tag := range flags {
+		if tag < 1 {
+			continue
+		}
+
+		body = protowire.AppendTag(body, protowire.Number(tag), protowire.VarintType)
+		body = protowire.AppendVarint(body, 1)
+	}
+
+	return body
+}

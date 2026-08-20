@@ -312,6 +312,16 @@ type debugGetRequest struct {
 	BabyUID string `json:"baby_uid"`
 	// Type - request type name, e.g. "GET_CONTROL" or "GET_SETTINGS"
 	Type string `json:"type"`
+	// SelectorTag - attach the selector as an embedded message at this tag on
+	// Request, rather than using the generated field.
+	//
+	// The camera rejects some requests with "missed 'getsettings' field", naming
+	// a selector the schema has no mapping for. Request has tags 3, 6, 9, 10,
+	// 11, 14 and 19+ free; sweeping them with this finds the right one, because
+	// the wrong tag keeps producing that same error and the right one does not.
+	SelectorTag int32 `json:"selector_tag,omitempty"`
+	// LogsURL - GetLogs.url, required by GET_LOGS
+	LogsURL string `json:"logs_url,omitempty"`
 	// Flags - selector field tags to set true on the request's selector message.
 	//
 	// Several GET requests are filtered: GetControl asks per-item (ptz=1,
@@ -357,10 +367,28 @@ func handleDebugGetAPI(w http.ResponseWriter, r *http.Request, babies []baby.Bab
 
 	req := buildDebugGetRequest(requestType, requestData.Flags)
 
+	if requestData.LogsURL != "" {
+		req.GetLogs = &client.GetLogs{Url: proto.String(requestData.LogsURL)}
+	}
+
+	// An unmapped selector, attached by tag. Flags default to a single "all"
+	// style boolean when none are given, since that is the shape every mapped
+	// selector uses.
+	if requestData.SelectorTag > 0 {
+		flags := requestData.Flags
+		if len(flags) == 0 {
+			flags = []int32{1}
+		}
+
+		client.SetUnknownBytesField(req, requestData.SelectorTag, client.EncodeSelectorMessage(flags))
+	}
+
 	log.Warn().
 		Str("baby_uid", babyUID).
 		Str("type", requestData.Type).
 		Interface("flags", requestData.Flags).
+		Int32("selector_tag", requestData.SelectorTag).
+		Str("sent", req.String()).
 		Msg("DEBUG: sending experimental GET request")
 
 	awaitResponse := conn.SendRequest(requestType, req)
@@ -378,6 +406,7 @@ func handleDebugGetAPI(w http.ResponseWriter, r *http.Request, babies []baby.Bab
 		"status_message": res.GetStatusMessage(),
 		"unknown_fields": client.DescribeUnknownFields(res),
 		"raw":            res.String(),
+		"sent":           req.String(),
 	}
 
 	log.Warn().

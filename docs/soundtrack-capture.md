@@ -192,11 +192,46 @@ Neither `GET_SOUNDTRACKS` nor `GET_PLAYBACK` reports the per-track setting, and
 
 Two places remain untested.
 
-**1. Settings.** This is the prime suspect: camera-side, persistent, and never
-examined. An earlier `GET_SETTINGS` probe timed out, so nothing was learned from
-it. `processStandby` now logs any unmapped field on a Settings message at info
-level, and the startup `GET_SETTINGS` will trigger it. Restart the bridge and
-look for:
+**1. Settings.** Still the prime suspect: camera-side, persistent, and never
+successfully read.
+
+`GET_SETTINGS` fails, and the camera says why:
+
+```
+Bad Request: missed 'getsettings' field
+```
+
+It wants a selector sub-message on `Request` that **is not in this schema at
+all**. The mapped selectors are `getSensorData = 12`, `getStatus = 8`,
+`getControl = 17` and `getLogs = 18`; there is no `getSettings`. `Request` has
+tags 3, 6, 9, 10, 11, 14 and 19+ free, and `getSettings = 6` would mirror
+`settings = 5` the way `getStatus = 8` mirrors `status = 7`.
+
+This also means the startup `GET_SETTINGS` has been failing all along. Its reply
+is never awaited, so the error was discarded silently, and everything known
+about settings has arrived through unsolicited `PUT_SETTINGS` broadcasts
+instead.
+
+Sweeping is unambiguous here, because the wrong tag keeps producing the same
+error and the right one does not:
+
+```bash
+for tag in 6 3 9 10 11 14 19 20; do
+  echo -n "tag $tag: "
+  curl -s -X POST http://localhost:8080/api/debug/get \
+    -H 'Content-Type: application/json' \
+    -d "{\"type\":\"GET_SETTINGS\",\"selector_tag\":$tag}" \
+    | jq -c '{error, status: .status_code, unknown: .unknown_fields}'
+done
+```
+
+`selector_tag` attaches a boolean selector as an unknown field at that tag; a
+test asserts the encoding is byte-identical to a generated one, so a hit is a
+real hit. Add `"flags":[1,2,3]` to set several booleans if a bare `all` is not
+enough.
+
+Once a settings reply comes back, `processStandby` logs anything the schema
+cannot name at info level:
 
 ```
 INF Settings carried unmapped fields baby_uid=... unknown_fields=[...]
@@ -205,6 +240,19 @@ INF Settings carried unmapped fields baby_uid=... unknown_fields=[...]
 `Settings` maps tags 2, 7-12, 15, 18 and 20, leaving 1, 3-6, 13, 14, 16, 17, 19
 and 21+ free — plenty of room for a soundtrack section. If a field appears,
 change a track's timer in the app and compare.
+
+`GET_LOGS` fails the same way with `missed 'getlogs' field`; that selector *is*
+mapped, and the probe now takes `"logs_url"` to fill it. The camera uploads its
+logs to that URL, which may well name the setting outright.
+
+**Status carries an unmapped field too**, seen at startup:
+
+```
+INF Status carried unmapped fields unknown_fields=[{"path":"Status","tag":8,"value":125,"wire_type":"varint"}]
+```
+
+Tag 8, varint, 125. Meaning unknown and probably unrelated to soundtracks —
+recorded here so it is not rediscovered from scratch.
 
 **2. Inside the Soundtrack message.** `Soundtrack` has only tags 1 and 2 in the
 schema and nothing has probed past them. A per-track setting belongs here rather

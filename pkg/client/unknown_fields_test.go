@@ -139,3 +139,46 @@ func TestGetUnknownVarintFieldSkipsOtherTypes(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, uint64(42), value)
 }
+
+// A selector attached as an unknown field must be byte-identical to the
+// generated one, or probing for a missing selector would prove nothing.
+func TestEncodeSelectorMessageMatchesGenerated(t *testing.T) {
+	generated, err := proto.Marshal(&client.GetStatus{All: proto.Bool(true)})
+	require.NoError(t, err)
+
+	assert.Equal(t, generated, client.EncodeSelectorMessage([]int32{1}))
+}
+
+// Several booleans at once, as GetControl uses
+func TestEncodeSelectorMessageMultipleFlags(t *testing.T) {
+	generated, err := proto.Marshal(&client.GetControl{
+		NightLight:        proto.Bool(true),
+		NightLightTimeout: proto.Bool(true),
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, generated, client.EncodeSelectorMessage([]int32{2, 3}))
+	assert.Empty(t, client.EncodeSelectorMessage(nil))
+}
+
+// The selector must survive being attached to a Request as an unknown field,
+// which is how a getSettings the schema lacks would be sent
+func TestSelectorAttachesToRequestAsUnknownField(t *testing.T) {
+	req := &client.Request{
+		Id:   proto.Int32(1),
+		Type: client.RequestType_GET_SETTINGS.Enum(),
+	}
+	client.SetUnknownBytesField(req, 6, client.EncodeSelectorMessage([]int32{1}))
+
+	encoded, err := proto.Marshal(req)
+	require.NoError(t, err)
+	decoded := &client.Request{}
+	require.NoError(t, proto.Unmarshal(encoded, decoded))
+
+	unknown := client.DescribeUnknownFields(decoded)
+	require.Len(t, unknown, 1)
+	assert.Equal(t, int32(6), unknown[0].Tag)
+	require.Len(t, unknown[0].Nested, 1)
+	assert.Equal(t, int32(1), unknown[0].Nested[0].Tag)
+	assert.Equal(t, uint64(1), unknown[0].Nested[0].Value)
+}
