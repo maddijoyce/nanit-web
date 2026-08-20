@@ -127,3 +127,18 @@ func TestDiscoveryCatalogKeyDetectsChanges(t *testing.T) {
 	assert.NotEqual(t, soundtrackCatalogKey(a), soundtrackCatalogKey(b))
 	assert.NotEqual(t, soundtrackCatalogKey(nil), soundtrackCatalogKey(a))
 }
+
+// Long-term statistics in Home Assistant require state_class on numeric
+// sensors, and it must not appear on non-numeric ones.
+func TestDiscoverySensorsCarryStateClass(t *testing.T) {
+	conn := testConnection()
+
+	for _, e := range conn.staticEntities("baby1", discoveryDevice{}) {
+		switch e.objectID {
+		case "temperature", "humidity":
+			assert.Equal(t, "measurement", e.entity.StateClass, "%v", e.objectID)
+		default:
+			assert.Empty(t, e.entity.StateClass, "%v should not declare a state class", e.objectID)
+		}
+	}
+}

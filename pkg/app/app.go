@@ -234,6 +234,13 @@ func (app *App) runWebsocket(babyUID string, conn *client.WebsocketConnection, c
 				processStandby(babyUID, m.Response.Settings, app.BabyStateManager)
 			} else if *m.Response.RequestType == client.RequestType_GET_STATUS && m.Response.Status != nil {
 				processStatus(babyUID, m.Response.Status, app.BabyStateManager)
+			} else if *m.Response.RequestType == client.RequestType_PUT_SETTINGS && m.Response.Settings != nil {
+				// The camera echoes the applied settings, so a volume or standby
+				// change we made is reflected without waiting for its next broadcast
+				processStandby(babyUID, m.Response.Settings, app.BabyStateManager)
+			} else if *m.Response.RequestType == client.RequestType_PUT_CONTROL && m.Response.Control != nil {
+				processLight(babyUID, m.Response.Control, app.BabyStateManager)
+				processSoundtrack(babyUID, m.Response.Control, app.BabyStateManager)
 			}
 		} else
 

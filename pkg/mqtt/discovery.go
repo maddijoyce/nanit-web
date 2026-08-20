@@ -40,6 +40,7 @@ type discoveryEntity struct {
 	CommandTopic      string          `json:"command_topic,omitempty"`
 	DeviceClass       string          `json:"device_class,omitempty"`
 	UnitOfMeasurement string          `json:"unit_of_measurement,omitempty"`
+	StateClass        string          `json:"state_class,omitempty"`
 	PayloadOn         string          `json:"payload_on,omitempty"`
 	PayloadOff        string          `json:"payload_off,omitempty"`
 	StateOn           string          `json:"state_on,omitempty"`
@@ -153,6 +154,7 @@ func (conn *Connection) staticEntities(babyUID string, device discoveryDevice) [
 			StateTopic:        stateTopic("temperature"),
 			DeviceClass:       "temperature",
 			UnitOfMeasurement: "°C",
+			StateClass:        "measurement",
 			Device:            device,
 		}},
 		{"sensor", "humidity", discoveryEntity{
@@ -161,6 +163,7 @@ func (conn *Connection) staticEntities(babyUID string, device discoveryDevice) [
 			StateTopic:        stateTopic("humidity"),
 			DeviceClass:       "humidity",
 			UnitOfMeasurement: "%",
+			StateClass:        "measurement",
 			Device:            device,
 		}},
 		{"binary_sensor", "is_night", discoveryEntity{
