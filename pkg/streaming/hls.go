@@ -30,6 +30,20 @@ type StreamError struct {
 	Code    string `json:"code"`
 }
 
+// HLS tuning. The cam publishes H.264 Main at 1080p10 with a keyframe every
+// second, and AAC-LC audio, so both streams are remuxed into HLS as-is - no
+// transcoding at all. Segments can only be cut on a keyframe, and with one
+// available every second any whole number of seconds here comes out exact.
+//
+// Player latency is roughly hlsSegmentSeconds x 3, since players start that
+// many segments behind the live edge. Dropping to 1 halves the delay again at
+// the cost of twice the segment requests, and some players are unhappy with
+// sub-2s target durations.
+const (
+	hlsSegmentSeconds = 2
+	hlsPlaylistSize   = 5
+)
+
 // Common error types
 const (
 	ErrorTypeRTMPConnection = "rtmp_connection"
@@ -101,16 +115,23 @@ func (h *HLSTranscoder) Start() error {
 	segmentPath := filepath.Join(h.hlsDir, "segment_%d.ts")
 
 	args := []string{
+		// Input: read straight through rather than filling a buffer first
+		"-fflags", "nobuffer",
+		"-analyzeduration", "1000000", // 1s, enough to detect the streams
+		"-probesize", "1000000",
 		"-i", h.rtmpURL, // Input RTMP stream
-		"-c:v", "libx264", // Video codec
-		"-preset", "ultrafast", // Fast encoding
-		"-tune", "zerolatency", // Low latency
-		"-c:a", "aac", // Audio codec
+		// Remux only. The cam's H.264/AAC is already what HLS wants, so
+		// re-encoding would only add CPU load, latency and quality loss.
+		"-c:v", "copy",
+		"-c:a", "copy",
 		"-f", "hls", // HLS format
-		"-hls_time", "2", // 2 second segments
-		"-hls_list_size", "5", // Keep 5 segments in playlist
-		"-hls_flags", "delete_segments", // Auto-delete old segments
+		"-hls_time", fmt.Sprintf("%d", hlsSegmentSeconds),
+		"-hls_list_size", fmt.Sprintf("%d", hlsPlaylistSize),
+		// Auto-delete old segments; every segment starts on a keyframe
+		"-hls_flags", "delete_segments+independent_segments",
 		"-hls_segment_filename", segmentPath,
+		"-muxdelay", "0",
+		"-muxpreload", "0",
 		"-y", // Overwrite output
 		playlistPath,
 	}

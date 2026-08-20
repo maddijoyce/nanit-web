@@ -6,18 +6,43 @@ import (
 	"github.com/notedit/rtmp/av"
 )
 
+// Packet types carrying stream configuration rather than media. At most one of
+// each is current at any moment - a repeat from the cam replaces the previous
+// one - and they are replayed in this order to every subscriber before its
+// first media packet, so clients joining mid-stream can decode.
+//
+// Together with the media types below this covers every type the RTMP library
+// produces, so no packet goes unclassified.
+var headerPktTypes = []int{
+	av.Metadata,
+	av.H264DecoderConfig,
+	av.H264SPSPPSNALU,
+	av.AACDecoderConfig,
+}
+
+func isMediaPkt(pkt av.Packet) bool {
+	switch pkt.Type {
+	case av.H264, av.AAC, av.OPUS:
+		return true
+	default:
+		return false
+	}
+}
+
 type subscriber struct {
 	initialized bool
 	pktC        chan av.Packet
 }
 
 type broadcaster struct {
-	headerPkts  []av.Packet
+	headerPkts  map[int]av.Packet
 	subscribers sync.Map
 }
 
 func newBroadcaster() *broadcaster {
-	return &broadcaster{}
+	return &broadcaster{
+		headerPkts: make(map[int]av.Packet, len(headerPktTypes)),
+	}
 }
 
 func (b *broadcaster) newSubscriber() *subscriber {
@@ -35,27 +60,32 @@ func (b *broadcaster) unsubscribe(sub *subscriber) {
 }
 
 func (b *broadcaster) broadcast(pkt av.Packet) {
-	// Audio / Video packets
-	if pkt.Type <= 2 {
-		b.subscribers.Range(func(key, value interface{}) bool {
-			sub := value.(*subscriber)
+	if !isMediaPkt(pkt) {
+		// Keep only the latest of each configuration type. Accumulating every
+		// one the cam ever sends grows without bound and eventually exceeds a
+		// new subscriber's channel buffer during replay, which blocks the
+		// publisher that is doing the replaying.
+		b.headerPkts[pkt.Type] = pkt
+		return
+	}
 
-			// Send header packets before sending any data
-			if !sub.initialized {
-				sub.initialized = true
-				for _, headerPkt := range b.headerPkts {
+	b.subscribers.Range(func(key, value interface{}) bool {
+		sub := value.(*subscriber)
+
+		// Send header packets before sending any data
+		if !sub.initialized {
+			sub.initialized = true
+			for _, pktType := range headerPktTypes {
+				if headerPkt, ok := b.headerPkts[pktType]; ok {
 					sub.pktC <- headerPkt
 				}
 			}
+		}
 
-			sub.pktC <- pkt
+		sub.pktC <- pkt
 
-			return true
-		})
-	} else {
-		// Header packets
-		b.headerPkts = append(b.headerPkts, pkt)
-	}
+		return true
+	})
 }
 
 func (b *broadcaster) closeSubscribers() {
