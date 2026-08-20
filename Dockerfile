@@ -1,5 +1,5 @@
 # Frontend build stage
-FROM --platform=$BUILDPLATFORM node:18-alpine AS frontend-build
+FROM --platform=$BUILDPLATFORM node:24-alpine AS frontend-build
 
 WORKDIR /app/frontend
 
