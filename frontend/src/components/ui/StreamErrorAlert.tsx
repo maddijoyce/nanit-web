@@ -48,7 +48,7 @@ function getErrorSolutions(errorType: string): string[] {
     case 'rtmp_connection':
     case 'p2p_punch':
       return [
-        'Check that your RTMP server port (1940) is accessible',
+        'Check that the address in NANIT_RTMP_ADDR is reachable from the camera',
         'Verify firewall settings allow incoming connections',
         'Ensure the camera and server are on the same network',
         'Try restarting the camera'

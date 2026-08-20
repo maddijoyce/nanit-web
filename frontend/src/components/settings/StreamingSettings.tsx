@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import StreamingLinks from '@/components/baby/StreamingLinks';
+import { api } from '@/lib/api';
+import { useStreamingInfo } from '@/hooks/useStreamingInfo';
 import type { Baby } from '@/types/api';
 
 interface StreamingSettingsProps {
@@ -10,6 +12,12 @@ interface StreamingSettingsProps {
 
 export default function StreamingSettings({ babies }: StreamingSettingsProps) {
   const [activeTab, setActiveTab] = useState(0);
+  const { streamingInfo } = useStreamingInfo();
+
+  const exampleBaby = babies[activeTab] ?? babies[0];
+  const exampleRtmpUrl = exampleBaby
+    ? api.getRTMPUrl(exampleBaby.uid, streamingInfo)
+    : '';
 
   if (babies.length === 0) {
     return (
@@ -131,10 +139,11 @@ export default function StreamingSettings({ babies }: StreamingSettingsProps) {
             <div>camera:</div>
             <div>&nbsp;&nbsp;- platform: ffmpeg</div>
             <div>&nbsp;&nbsp;&nbsp;&nbsp;name: &quot;Nanit Camera&quot;</div>
-            <div>&nbsp;&nbsp;&nbsp;&nbsp;input: &quot;rtmp://YOUR_SERVER_IP:1935/camera_uid&quot;</div>
+            <div>&nbsp;&nbsp;&nbsp;&nbsp;input: &quot;{exampleRtmpUrl}&quot;</div>
           </div>
           <p className="text-xs text-green-700">
-            Replace YOUR_SERVER_IP with the IP address of this server and camera_uid with your device&apos;s UID.
+            This is the address configured with NANIT_RTMP_ADDR. It has to be reachable from
+            both the camera and Home Assistant.
           </p>
         </div>
       </div>

@@ -118,6 +118,11 @@ func setupAPIRoutes(babies []baby.Baby, dataDir DataDirectories, stateManager *b
 		handleBabiesAPI(w, r, babies, stateManager)
 	}))
 
+	// Streaming endpoint information (RTMP/HLS addresses)
+	http.HandleFunc("/api/streaming/info", requireAuth(app, func(w http.ResponseWriter, r *http.Request) {
+		handleStreamingInfoAPI(w, r, app)
+	}))
+
 	// Control endpoints
 	http.HandleFunc("/api/control/night-light", func(w http.ResponseWriter, r *http.Request) {
 		handleControlAPI(w, r, "night-light", babies, stateManager, app)

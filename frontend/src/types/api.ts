@@ -205,6 +205,18 @@ export interface StreamStatusResponse {
   stream_error?: StreamError;
 }
 
+// Streaming Info Types
+export interface StreamingEndpointInfo {
+  enabled: boolean;
+  public_addr?: string;
+  url_template?: string;
+}
+
+export interface StreamingInfoResponse {
+  rtmp: StreamingEndpointInfo;
+  hls: StreamingEndpointInfo;
+}
+
 // Web Authentication Types
 export interface WebAuthStatusResponse {
   password_protection_enabled: boolean;

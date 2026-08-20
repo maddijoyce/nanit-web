@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { api } from '@/lib/api'
+import { useStreamingInfo } from '@/hooks/useStreamingInfo'
 import { copyToClipboard } from '@/lib/utils'
 import type { Baby } from '@/types/api'
 
@@ -37,9 +38,11 @@ function CopyButton({ text, label }: CopyButtonProps) {
 
 export default function StreamingLinks({ baby }: StreamingLinksProps) {
   const [isExpanded, setIsExpanded] = useState(false)
+  const { streamingInfo } = useStreamingInfo(isExpanded)
 
-  const rtmpUrl = api.getRTMPUrl(baby.uid)
+  const rtmpUrl = api.getRTMPUrl(baby.uid, streamingInfo)
   const hlsUrl = api.getHLSUrl(baby.uid)
+  const rtmpDisabled = streamingInfo?.rtmp?.enabled === false
 
   return (
     <div className="border border-nanit-gray-200 rounded-lg overflow-hidden">
@@ -66,10 +69,20 @@ export default function StreamingLinks({ baby }: StreamingLinksProps) {
               <p className="text-sm text-nanit-gray-600 mb-3">
                 For Home Assistant, OBS, VLC, etc.
               </p>
-              <div className="bg-nanit-gray-50 p-3 rounded border text-sm font-mono text-nanit-gray-700 mb-3 overflow-x-auto whitespace-nowrap">
-                {rtmpUrl}
-              </div>
-              <CopyButton text={rtmpUrl} label="Copy RTMP URL" />
+              {rtmpDisabled ? (
+                <p className="text-sm text-nanit-gray-700 bg-nanit-gray-50 p-3 rounded border">
+                  The built-in RTMP server is disabled. Set{' '}
+                  <span className="font-mono">NANIT_RTMP_ENABLED=true</span> and{' '}
+                  <span className="font-mono">NANIT_RTMP_ADDR</span> to use it.
+                </p>
+              ) : (
+                <>
+                  <div className="bg-nanit-gray-50 p-3 rounded border text-sm font-mono text-nanit-gray-700 mb-3 overflow-x-auto whitespace-nowrap">
+                    {rtmpUrl}
+                  </div>
+                  <CopyButton text={rtmpUrl} label="Copy RTMP URL" />
+                </>
+              )}
             </div>
 
             {/* HLS Link */}
@@ -92,7 +105,8 @@ export default function StreamingLinks({ baby }: StreamingLinksProps) {
               <p><strong>Usage Notes:</strong></p>
               <p>• RTMP streams work with most video software and Home Assistant</p>
               <p>• HLS streams work in web browsers and mobile apps</p>
-              <p>• Start the video stream above before using these URLs</p>
+              <p>• Start the video stream above before using these URLs — the RTMP server rejects clients until the cam is publishing</p>
+              <p>• The RTMP address comes from <span className="font-mono">NANIT_RTMP_ADDR</span> and must be reachable from the machine you play it on</p>
             </div>
           </div>
         </div>

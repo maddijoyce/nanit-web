@@ -51,6 +51,39 @@ func handleStatusAPI(w http.ResponseWriter, r *http.Request, babies []baby.Baby,
 	json.NewEncoder(w).Encode(status)
 }
 
+// API handler for streaming endpoint information
+//
+// The RTMP server listens on the address configured through NANIT_RTMP_ADDR,
+// which is rarely the host/port the dashboard itself is served from. Clients
+// have to be told the real address rather than guessing it from the browser
+// location.
+func handleStreamingInfoAPI(w http.ResponseWriter, r *http.Request, app *App) {
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	rtmpInfo := map[string]interface{}{
+		"enabled": app.Opts.RTMP != nil,
+	}
+
+	if app.Opts.RTMP != nil {
+		rtmpInfo["public_addr"] = app.Opts.RTMP.PublicAddr
+		rtmpInfo["url_template"] = app.getLocalStreamURLTemplate()
+	}
+
+	result := map[string]interface{}{
+		"rtmp": rtmpInfo,
+		"hls": map[string]interface{}{
+			"enabled":      true,
+			"url_template": "/api/stream/hls/{baby_uid}/playlist.m3u8",
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
 // API handler for babies list
 func handleBabiesAPI(w http.ResponseWriter, r *http.Request, babies []baby.Baby, stateManager *baby.StateManager) {
 	if r.Method != "GET" {

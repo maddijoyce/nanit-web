@@ -16,6 +16,7 @@ import type {
   StreamStartRequest,
   StreamStartResponse,
   StreamStatusResponse,
+  StreamingInfoResponse,
   WebAuthStatusResponse,
   WebAuthResponse,
   HealthResponse,
@@ -221,10 +222,25 @@ class ApiClient {
     return this.request<HealthResponse>(`/health/${babyUid}`);
   }
 
+  // Streaming endpoint information
+  async getStreamingInfo(): Promise<StreamingInfoResponse> {
+    return this.request<StreamingInfoResponse>('/streaming/info');
+  }
+
   // Utility methods
-  getRTMPUrl(babyUid: string): string {
+
+  // The RTMP server listens on NANIT_RTMP_ADDR, which is usually a different
+  // host and port than the dashboard is served from, so the URL has to come
+  // from the server (see getStreamingInfo) rather than the browser location.
+  // The fallback is only a best guess for when that call has not resolved.
+  getRTMPUrl(babyUid: string, streamingInfo?: StreamingInfoResponse): string {
+    const template = streamingInfo?.rtmp?.url_template;
+    if (template) {
+      return template.replace('{baby_uid}', babyUid);
+    }
+
     const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-    return `rtmp://${host}:1940/local/${babyUid}`;
+    return `rtmp://${host}:1935/local/${babyUid}`;
   }
 
   getHLSUrl(babyUid: string): string {

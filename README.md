@@ -235,6 +235,21 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Mobile app unaffected**: Official Nanit app typically continues working
 - **Eventually connects**: Usually succeeds after some time
 
+### Q: VLC (or ffplay/Home Assistant) says it can't open the RTMP URL?
+**A:** Two things to check, in order:
+
+1. **Use the address from `NANIT_RTMP_ADDR`**, not the address of the dashboard.
+   The RTMP server listens on the port from `NANIT_RTMP_ADDR` (`1935` in the
+   examples above), which is separate from the dashboard's HTTP port. With
+   `NANIT_RTMP_ADDR=192.168.9.22:1935` the stream URL is
+   `rtmp://192.168.9.22:1935/local/YOUR_BABY_UID`. The dashboard's Streaming
+   Links panel reads this from the server, so copy the URL from there.
+2. **Start the stream first.** The RTMP server is a relay, not a recorder: it
+   closes any client that connects while the cam is not publishing, which VLC
+   reports as "unable to open the MRL". Start the stream from the dashboard (or
+   leave `NANIT_RTMP_AUTO_START=true`) and confirm the log shows
+   `New stream publisher connected` before pointing a player at the URL.
+
 ### Q: How do I check what's going wrong?
 **A:** Check the application logs using the Docker commands from the Installation section:
 ```bash

@@ -359,13 +359,23 @@ func (app *App) getRemoteStreamURL(babyUID string) string {
 	return fmt.Sprintf("rtmps://media-secured.nanit.com/nanit/%v.%v", babyUID, app.SessionStore.Session.AuthToken)
 }
 
+// localStreamURLTemplate - shape of the RTMP URL served by the built-in RTMP
+// server, both for the cam to publish to and for clients (VLC, Home Assistant,
+// ffmpeg) to subscribe to.
+const localStreamURLTemplate = "rtmp://{publicAddr}/local/{babyUid}"
+
 func (app *App) getLocalStreamURL(babyUID string) string {
 	if app.Opts.RTMP != nil {
-		tpl := "rtmp://{publicAddr}/local/{babyUid}"
-		return strings.NewReplacer("{publicAddr}", app.Opts.RTMP.PublicAddr, "{babyUid}", babyUID).Replace(tpl)
+		return strings.NewReplacer("{publicAddr}", app.Opts.RTMP.PublicAddr, "{babyUid}", babyUID).Replace(localStreamURLTemplate)
 	}
 
 	return ""
+}
+
+// getLocalStreamURLTemplate - local stream URL with the baby UID left as a
+// "{baby_uid}" placeholder, so clients can render it for any baby
+func (app *App) getLocalStreamURLTemplate() string {
+	return app.getLocalStreamURL("{baby_uid}")
 }
 
 // Connection management methods for WebSocket connections
