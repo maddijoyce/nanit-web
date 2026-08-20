@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '@/lib/api'
 import type { Baby } from '@/types/api'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
@@ -100,6 +100,29 @@ export default function ControlPanel({ baby }: ControlPanelProps) {
     }
   }
 
+  // Track the slider locally so dragging stays responsive, but follow the
+  // device whenever it reports a value we did not just set ourselves.
+  const [volume, setVolume] = useState<number>(baby.volume ?? 0)
+
+  useEffect(() => {
+    if (typeof baby.volume === 'number') {
+      setVolume(baby.volume)
+    }
+  }, [baby.volume])
+
+  const handleVolumeCommit = async (level: number) => {
+    setLoading('volume', true)
+    try {
+      await api.setVolume(baby.uid, level)
+    } catch (error) {
+      console.error('Volume command failed:', error)
+      // Snap back to the last value the device reported
+      setVolume(baby.volume ?? 0)
+    } finally {
+      setLoading('volume', false)
+    }
+  }
+
   const isDisabled = !baby.websocket_alive
 
   return (
@@ -133,6 +156,31 @@ export default function ControlPanel({ baby }: ControlPanelProps) {
         </ControlButton>
       </div>
       
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
+          <label htmlFor={`volume-${baby.uid}`} className="text-sm font-medium text-nanit-gray-700">
+            Volume
+          </label>
+          <span className="text-sm tabular-nums text-nanit-gray-600">
+            {volume}%{loadingStates.volume ? ' …' : ''}
+          </span>
+        </div>
+        <input
+          id={`volume-${baby.uid}`}
+          type="range"
+          min={0}
+          max={100}
+          step={1}
+          value={volume}
+          disabled={isDisabled || loadingStates.volume}
+          onChange={(e) => setVolume(Number(e.target.value))}
+          onMouseUp={(e) => handleVolumeCommit(Number((e.target as HTMLInputElement).value))}
+          onTouchEnd={(e) => handleVolumeCommit(Number((e.target as HTMLInputElement).value))}
+          onKeyUp={(e) => handleVolumeCommit(Number((e.target as HTMLInputElement).value))}
+          className="w-full disabled:opacity-50 disabled:cursor-not-allowed"
+        />
+      </div>
+
       <div className="text-xs text-nanit-gray-500">
         Control commands are sent to the device and may take a few seconds to take effect.
       </div>

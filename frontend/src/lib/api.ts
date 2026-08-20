@@ -146,6 +146,18 @@ class ApiClient {
     });
   }
 
+  async setVolume(babyUid: string, level: number): Promise<ControlResponse> {
+    const payload: ControlRequest = {
+      baby_uid: babyUid,
+      action: 'set',
+      value: level,
+    };
+    return this.request<ControlResponse>('/control/volume', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   // Authentication
   async login(email: string, password: string): Promise<LoginResponse> {
     const payload: LoginRequest = { email, password };

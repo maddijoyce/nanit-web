@@ -8,6 +8,8 @@ export interface Baby {
   is_night?: boolean;
   night_light?: boolean;
   standby?: boolean;
+  volume?: number;
+  soundtrack?: string;
   websocket_alive: boolean;
   stream_state?: string;
 }
@@ -127,7 +129,8 @@ export interface DayNightAnalytics {
 // Control Request Types
 export interface ControlRequest {
   baby_uid: string;
-  action: 'toggle';
+  action: 'toggle' | 'set';
+  value?: number;
 }
 
 export interface ControlResponse {
