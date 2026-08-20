@@ -177,7 +177,7 @@ export default function DeviceInfo({ baby }: DeviceInfoProps) {
                               }`}>
                                 <li>Try stopping and restarting the stream</li>
                                 <li>Check server resources and disk space</li>
-                                <li>Verify RTMP server port (1940) is accessible</li>
+                                <li>Verify the RTMP port from NANIT_RTMP_ADDR is accessible</li>
                                 <li>Camera may need to be restarted</li>
                               </ul>
                             </details>
