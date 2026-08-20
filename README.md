@@ -155,7 +155,7 @@ per camera:
 | Standby | switch | |
 | Volume | number | Camera speaker volume, 0–100 |
 | Soundtrack | switch | Built-in sound playback on/off |
-| Soundtrack Selection | select | Withheld until track selection is verified — see the note below |
+| Soundtrack Selection | select | Options come from the camera's own catalog |
 
 Simply enable MQTT in your configuration and devices will appear automatically.
 Set `NANIT_MQTT_DISCOVERY=false` to publish state topics without announcing
@@ -164,22 +164,16 @@ entities.
 The video feed is not announced via discovery; add the camera manually as
 described below.
 
-**Soundtrack control is partially working.** Starting and stopping playback use
-`PUT_PLAYBACK` and are confirmed, and are exposed as the **Soundtrack** switch.
-The camera lists its built-in sounds (White Noise, Birds, Waves, Wind) via
-`GET_SOUNDTRACKS`.
+**Soundtrack control is working.** The camera's built-in sounds (White Noise,
+Birds, Waves, Wind) are listed via `GET_SOUNDTRACKS` and driven with
+`PUT_PLAYBACK`, exposed as the **Soundtrack** switch and the **Soundtrack
+Selection** select. Sounds are identified by filename; the select shows them
+without the extension.
 
-Choosing *which* sound plays is **not** solved: `PUT_PLAYBACK` starts whatever
-track the camera already had selected, and the field that changes the selection
-has not been identified. The **Soundtrack Selection** select entity is therefore
-withheld from discovery rather than shipped as a control that silently plays the
-wrong sound. Set the track from the Nanit app for now.
-[SOUNDTRACK_CAPTURE.md](SOUNDTRACK_CAPTURE.md) documents what is known and the
-remaining experiments.
-
-Note also that the camera broadcasts playback *stops* but not starts or track
-changes, so starting a sound from the Nanit app is not reflected in Home
-Assistant until it stops.
+Because the camera broadcasts playback *stops* but not starts or track changes,
+state is read back with `GET_PLAYBACK` at startup and shortly after each command
+rather than relying on broadcasts. A track changed in the Nanit app may
+therefore lag in Home Assistant until the next command or restart.
 
 ### Manual Camera Setup
 

@@ -70,167 +70,84 @@ message Response {
 A unit test decodes the exact captured bytes and asserts nothing is left
 unmapped.
 
-### GET_PLAYBACK reports playback state (Response field 11)
+### GET_PLAYBACK carries the track — the whole protocol
 
-`GET_PLAYBACK` (19) had never been called by this project. It answers with an
-embedded message on field 11:
+`GET_PLAYBACK` (19) answers on `Response.playback` (field 11). Read while
+**Wind** was playing, the 30-byte payload decodes as:
 
 ```
-unknown_fields=[{"path":"Response","tag":11,"wire_type":"bytes",
-                 "nested":[{"tag":1,"wire_type":"varint","value":1}]}]
+tag 1 varint = 0                      -> status = STARTED
+tag 3 bytes  = {1: 0, 2: "Wind.wav"}  -> Soundtrack
+tag 4 bytes  = {1: 0, 2: "Wind.wav"}  -> Soundtrack
 ```
 
-Field 1 = 1 is `Playback.Status.STOPPED`, so field 11 is a `Playback`. Now
-mapped as `Response.playback = 11`, and requested at startup.
+With **Birds** playing, both carried `"Birds.wav"`. Stopped, the payload is two
+bytes: `status = STOPPED` and nothing else.
 
-**This is the most promising place left to look.** It was read while nothing was
-playing, so it reported only a status. If the camera tracks *which* track is
-selected, it should appear here once something is playing.
+So `Playback` fields 3 and 4 are **embedded `Soundtrack` messages**, the same
+type `GET_SOUNDTRACKS` returns. Both carried the same value in every capture, so
+the distinction between them is unknown; commands set both.
 
-### Not yet solved: how to choose which track plays
+```protobuf
+message Playback {
+  required Status status = 1;
+  optional Soundtrack soundtrack = 3;
+  optional Soundtrack selectedSoundtrack = 4;
+}
+```
 
-`PUT_PLAYBACK` with `status:STARTED` plays **the track the camera already has
-selected**. Confirmed by playing "Wind" from the phone app, stopping it, then
-asking this bridge for `Birds.wav` — playback started, on Wind.
+A test encodes `Playback{STARTED, Wind.wav, Wind.wav}` and asserts it reproduces
+the captured 30 bytes exactly, so a command looks to the camera like its own
+representation.
 
-Two sweeps of candidate fields on `Playback`, taken together:
+#### How the earlier sweeps pointed here
 
-| Tags | As bytes | As varint | Reading |
-|---|---|---|---|
-| 2, 5, 6, 7, 8 | Played, no change | — | Unknown to the camera; silently discarded |
-| 3, 4 | **Timeout** | 200 OK, no change | Real fields, varint-typed, but not the selector |
+Worth recording, because the reasoning generalises. On `Playback`:
 
-The bytes/varint split is what pins this down. An unknown field is dropped
-whatever its wire type; a *known* field sent with the wrong wire type fails to
-parse, and the camera never replies. So tags 3 and 4 are genuine varint fields
-on `Playback` — but values 0-3 on either changed nothing, so neither selects the
-track.
+| Tags | As bytes | As varint |
+|---|---|---|
+| 2, 5, 6, 7, 8 | played, no change | — |
+| 3, 4 | **timeout** | 200 OK, no change |
 
-Nothing on `Playback` selects a track. The selection lives elsewhere.
+Unknown fields are discarded whatever their wire type, so the ignored tags were
+genuinely absent from the camera's schema. Tags 3 and 4 rejecting a bare string
+meant they *were* mapped — a known field with an unparseable payload fails the
+whole message, and the camera never replies. The inference that they were
+therefore varints was **wrong**: they are message fields, and `"Wind.wav"` is
+simply not a valid submessage. The varint probes returning 200 was the misleading
+part; only reading `GET_PLAYBACK` while a track was playing settled it.
 
-### Other probes, for the record
+The lesson: a timeout means "this tag exists and I could not parse it", which is
+far more informative than a 200, and reading state beats writing guesses.
 
-- `GET_STATUS`, `GET_CONTROL` (no flags): 200, **no** unmapped fields.
-- `GET_SETTINGS` via the debug endpoint: timed out. Worth retrying; the startup
-  path issues it successfully without awaiting a matching reply.
-- `GET_CONTROL` with selector flags 1-8: failed. Probably `ptz` (tag 1) on a
-  camera without it — narrow to `[2,3,4]` plus one unmapped tag at a time.
+### Why nothing showed up when changing tracks
+
+The camera broadcasts a `PUT_PLAYBACK` request when playback **stops**, but not
+when it starts and not when the track changes. So the only way to learn the
+current track is to ask: `GET_PLAYBACK`. This bridge does that at startup and
+again shortly after every command it sends.
 
 ---
 
-## 2. Next experiments
+## 2. Status
 
-### Enable the harness
+Everything needed for soundtrack control is mapped:
 
-```bash
-NANIT_LOG_LEVEL=trace
-NANIT_DEBUG_CONTROL=true
-```
+| Capability | State |
+|---|---|
+| List built-in sounds | Working — `GET_SOUNDTRACKS` |
+| Start / stop | Working — `PUT_PLAYBACK` |
+| Choose a track | Implemented — `Playback.soundtrack` + `selectedSoundtrack` |
+| Read what is playing | Working — `GET_PLAYBACK` |
+| Volume | Working — `Settings.volume` |
 
-> Shell note: `zsh` does not treat `#` as a comment when pasted interactively.
-> Paste the commands without the comment lines, or the shell reports
-> `command not found: #`.
+`SoundtrackSelectionVerified` in `pkg/client/soundtrack.go` is now `true`, so the
+Home Assistant **Soundtrack Selection** select is published.
 
-### A. Read playback state *while a track is playing* ← start here
-
-This is read-only and needs no guessing.
-
-1. In the Nanit app, start **Wind**.
-2. While it plays:
-
-```bash
-curl -s -X POST http://localhost:8080/api/debug/get \
-  -H 'Content-Type: application/json' -d '{"type":"GET_PLAYBACK"}' | jq
-```
-
-3. Look at `unknown_fields`. Anything inside the playback message is reported
-   with the path `Response.playback`, e.g.:
-
-```json
-{"path":"Response.playback","tag":6,"wire_type":"bytes","value":"\"Wind.wav\""}
-```
-
-4. Switch to **Birds** in the app and repeat. Whatever changes is the selector.
-
-If `Response.playback` shows only `status` while a track is playing, the camera
-does not report the selection over the socket at all, and B becomes the lead.
-
-### B. Diff Nanit's cloud API
-
-The phone app talks to `api.nanit.com` as well as the camera. A remembered
-setting may be stored server-side, which would explain why changing tracks
-produces nothing on the socket.
-
-```bash
-curl -s -X POST http://localhost:8080/api/debug/rest \
-  -H 'Content-Type: application/json' -d '{"path":"/babies"}' | jq
-```
-
-The response is passed through untouched so it can be diffed directly:
-
-```bash
-# with Wind selected
-curl -s -X POST http://localhost:8080/api/debug/rest \
-  -H 'Content-Type: application/json' -d '{"path":"/babies"}' | jq -S . > wind.json
-
-# switch to Birds in the app, then
-curl -s -X POST http://localhost:8080/api/debug/rest \
-  -H 'Content-Type: application/json' -d '{"path":"/babies"}' | jq -S . > birds.json
-
-diff wind.json birds.json
-```
-
-Other paths worth trying, using your camera UID:
-
-```bash
-/babies/<uid>
-/babies/<uid>/settings
-/babies/<uid>/soundtracks
-/babies/<uid>/playback
-```
-
-A 404 is a fine answer — it rules a path out. Anything that returns JSON
-mentioning a sound name is the thing.
-
-### C. Re-run the Control probe, narrowed
-
-```bash
-curl -s -X POST http://localhost:8080/api/debug/get \
-  -H 'Content-Type: application/json' -d '{"type":"GET_CONTROL","flags":[2,3,4]}' | jq
-```
-
-Then add one unmapped selector tag at a time (`[2,3,4,5]`, `[2,3,4,6]`, …). A
-selector the camera knows may unlock a `Control` field that is never otherwise
-reported. Debug endpoints now return JSON on failure, so `jq` keeps working when
-a request times out.
-
-### Record the answer
-
-Two constants in `pkg/client/soundtrack.go`:
-
-```go
-const (
-	SoundtrackNameFieldTag int32 = 2      // <- the confirmed tag
-	SoundtrackSelectionVerified = false   // <- flip to true once it works
-)
-```
-
-Flipping `SoundtrackSelectionVerified` publishes the Home Assistant **select**
-entity. It is withheld while selection does not work, because a dropdown that
-silently plays a different sound is worse on a baby monitor than no dropdown.
-
-If the selector turns out to live somewhere other than `Playback` — a different
-request type, or the cloud API — `sendSoundCommand` in
-`pkg/app/websocket_handlers.go` is the single place that needs rerouting.
-
-Once confirmed, fold the field into `pkg/client/websocket.proto` and regenerate
-with protoc **29.3** and protoc-gen-go **v1.36.5**, which reproduce the
-committed `websocket.pb.go` byte for byte:
-
-```bash
-go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.5
-protoc --go_out=. --go_opt=module=github.com/indiefan/home_assistant_nanit pkg/client/websocket.proto
-```
+Because the camera is the authority on what is actually playing, state is
+reconciled against `GET_PLAYBACK` about 1.5s after every command. If a command
+does not take effect, the published state follows the camera rather than the
+request — the entity cannot end up claiming a track that is not playing.
 
 ---
 
@@ -256,20 +173,19 @@ mosquitto_pub -t 'nanit/babies/YOUR_UID/soundtrack/switch' -m 'false'
 mosquitto_sub -t 'nanit/babies/YOUR_UID/soundtrack_name' -v
 ```
 
-In Home Assistant the camera device carries a **Soundtrack** switch (start/stop,
-working). The **Soundtrack Selection** select appears only once
-`SoundtrackSelectionVerified` is true.
+In Home Assistant the camera device carries a **Soundtrack** switch (start/stop)
+and a **Soundtrack Selection** select listing Off plus the camera's own sounds.
 
 ### Known limitations
 
-**The camera broadcasts stops, but not starts and not track changes.** So
-stopping from the phone app is reflected here; starting or switching tracks
-there is not. State is updated optimistically when a command is sent from this
-side, which is what keeps the Home Assistant switch from springing back to off.
+**The camera broadcasts stops, but not starts and not track changes.** Starting
+or switching tracks from the phone app is therefore not pushed here. State is
+refreshed by `GET_PLAYBACK` at startup and after each command this bridge sends,
+so it is correct for anything done from Home Assistant or the dashboard, and can
+lag a change made in the Nanit app until the next command or restart.
 
-**Start/stop is all that works today.** Until the selector is found, starting
-playback plays whatever the camera last had selected — set that from the Nanit
-app.
+Polling `GET_PLAYBACK` on a timer would close that gap; it is not done today to
+avoid extra traffic to the camera.
 
 ## 4. Turn the harness off
 

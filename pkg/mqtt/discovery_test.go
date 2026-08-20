@@ -196,22 +196,32 @@ func TestResolveSoundtrackSwitchUsesFirstSound(t *testing.T) {
 	assert.Equal(t, "White Noise.wav", conn.resolveSoundtrackSwitch("baby1", true))
 }
 
-// The select must stay unpublished while track selection is unverified: an
-// entity that silently plays the wrong sound is worse than no entity.
-func TestSoundtrackSelectWithheldWhileUnverified(t *testing.T) {
-	if client.SoundtrackSelectionVerified {
-		t.Skip("selection verified; the select is expected to publish")
-	}
-
-	// The switch, which does work, must still be announced
+// The select is published once track selection is verified; while it is not,
+// it must stay withheld rather than offer a control that plays the wrong sound.
+func TestSoundtrackSelectGating(t *testing.T) {
 	conn := testConnection()
+
 	var hasSwitch bool
 	for _, e := range conn.staticEntities("baby1", discoveryDevice{}) {
 		if e.objectID == "soundtrack_playing" {
 			hasSwitch = true
 		}
-		assert.NotEqual(t, "select", e.component, "the select is not a static entity")
+		assert.NotEqual(t, "select", e.component, "the select is announced separately, not as a static entity")
 	}
 
-	assert.True(t, hasSwitch, "Start/stop works and must remain available")
+	// Start/stop works either way and must always be available
+	assert.True(t, hasSwitch, "Soundtrack switch should always be announced")
+
+	if !client.SoundtrackSelectionVerified {
+		t.Skip("selection unverified; the select is intentionally withheld")
+	}
+
+	// Verified: the select must carry the camera's sounds plus Off
+	entity := conn.soundtrackSelectEntity("baby1", discoveryDevice{}, []baby.Soundtrack{
+		baby.NewSoundtrack("White Noise.wav"),
+		baby.NewSoundtrack("Birds.wav"),
+	})
+
+	assert.Equal(t, []string{"Off", "White Noise", "Birds"}, entity.Options)
+	assert.Equal(t, "nanit/babies/baby1/soundtrack/select", entity.CommandTopic)
 }

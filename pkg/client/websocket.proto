@@ -195,10 +195,11 @@ message Playback {
 
   required Status status = 1;
 
-  // The track to play is carried on this message but its field number is not
-  // confirmed. See soundtrackNameFieldTag in pkg/app/websocket_handlers.go and
-  // SOUNDTRACK_CAPTURE.md; it is written as an unknown field until verified,
-  // so no regeneration is needed to try a different tag.
+  // Both confirmed from GET_PLAYBACK replies while a track was playing. Each
+  // carried the same Soundtrack in every capture, so the distinction between
+  // them is unknown; when stopped, neither is present.
+  optional Soundtrack soundtrack = 3;
+  optional Soundtrack selectedSoundtrack = 4;
 }
 
 // Soundtrack - a sound built into the camera, as listed by GET_SOUNDTRACKS.

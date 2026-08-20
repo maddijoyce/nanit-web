@@ -364,9 +364,10 @@ func logInboundFrame(babyUID string, m *client.Message) {
 // sendSoundCommand - starts the named soundtrack, or stops playback when given
 // an empty name or baby.SoundtrackOffName.
 //
-// State is updated optimistically because the camera broadcasts a playback stop
-// but not a start; without this a switch turned on in Home Assistant would
-// spring straight back to off.
+// State is set optimistically because the camera broadcasts a stop but never a
+// start; without it a switch turned on in Home Assistant would spring back to
+// off. It is then reconciled against GET_PLAYBACK, so what ends up published is
+// what the camera reports rather than what was asked for.
 func sendSoundCommand(babyUID string, name string, conn *client.WebsocketConnection, stateManager *baby.StateManager) error {
 	if conn == nil {
 		return errors.New("no websocket connection")
@@ -382,45 +383,40 @@ func sendSoundCommand(babyUID string, name string, conn *client.WebsocketConnect
 		})
 
 		stateManager.Update(babyUID, *baby.NewState().SetSoundtrack(baby.SoundtrackOffName))
+		reconcilePlaybackState(babyUID, conn, stateManager)
 		return nil
 	}
 
 	log.Info().Str("baby_uid", babyUID).Str("soundtrack", name).Msg("Starting soundtrack playback")
 
-	playback := &client.Playback{
-		Status: client.Playback_STARTED.Enum(),
-	}
-
-	// Carried as an unknown field while the tag is unconfirmed, so a different
-	// one can be tried without regenerating the schema.
-	client.SetUnknownBytesField(playback, client.SoundtrackNameFieldTag, []byte(name))
-
+	// The camera reports the track on both fields; mirror that when setting it.
 	conn.SendRequest(client.RequestType_PUT_PLAYBACK, &client.Request{
-		Playback: playback,
+		Playback: &client.Playback{
+			Status:             client.Playback_STARTED.Enum(),
+			Soundtrack:         client.NewSoundtrackMessage(name),
+			SelectedSoundtrack: client.NewSoundtrackMessage(name),
+		},
 	})
 
-	stateUpdate := baby.NewState()
-	if client.SoundtrackSelectionVerified {
-		stateUpdate.SetSoundtrack(name)
-	} else {
-		// The camera plays whatever it already had selected, so recording the
-		// requested name would be a guess presented as fact.
-		log.Warn().
-			Str("requested", name).
-			Msg("Soundtrack selection is unverified: the camera will play its own selected track")
-
-		stateUpdate.SetSoundtrackPlaying(true)
-	}
-
-	stateManager.Update(babyUID, *stateUpdate)
+	stateManager.Update(babyUID, *baby.NewState().SetSoundtrack(name))
+	reconcilePlaybackState(babyUID, conn, stateManager)
 	return nil
 }
 
-// processPlayback - reflects a playback state change reported by the camera.
-//
-// The camera broadcasts a PUT_PLAYBACK request when playback stops. A start
-// carries the track name if it rides on the message; when it does not, the
-// name we last commanded is kept rather than being cleared.
+// playbackReconcileDelay - how long to let a command take effect before asking
+// the camera what actually happened
+const playbackReconcileDelay = 1500 * time.Millisecond
+
+// reconcilePlaybackState - re-reads playback state shortly after a command, so
+// a command that did not take effect cannot leave a wrong value published
+func reconcilePlaybackState(babyUID string, conn *client.WebsocketConnection, stateManager *baby.StateManager) {
+	go func() {
+		time.Sleep(playbackReconcileDelay)
+		requestPlaybackState(babyUID, conn, stateManager)
+	}()
+}
+
+// processPlayback - reflects a playback state reported by the camera
 func processPlayback(babyUID string, playback *client.Playback, stateManager *baby.StateManager) {
 	if playback == nil || playback.Status == nil {
 		return
@@ -436,15 +432,15 @@ func processPlayback(babyUID string, playback *client.Playback, stateManager *ba
 		return
 	}
 
-	// Started. Prefer a name carried on the message; fall back to whatever is
-	// already known so the entity does not report a bare "playing".
-	name := stateManager.GetBabyState(babyUID).GetSoundtrackName()
-	if name == "" || name == baby.SoundtrackOffName {
-		name = soundtrackUnknownName
-	}
+	name := client.PlaybackSoundtrackName(playback)
+	if name == "" {
+		// A stop broadcast names no track, and neither does a bare start.
+		// Keep what is known rather than blanking it.
+		stateUpdate.SetSoundtrackPlaying(true)
+		stateManager.Update(babyUID, stateUpdate)
 
-	if raw, ok := client.GetUnknownBytesField(playback, client.SoundtrackNameFieldTag); ok {
-		name = string(raw)
+		log.Debug().Str("baby_uid", babyUID).Msg("Camera reported playback started without naming a track")
+		return
 	}
 
 	stateUpdate.SetSoundtrack(name)
@@ -452,10 +448,6 @@ func processPlayback(babyUID string, playback *client.Playback, stateManager *ba
 
 	log.Debug().Str("baby_uid", babyUID).Str("soundtrack", name).Msg("Camera reported soundtrack playing")
 }
-
-// soundtrackUnknownName - shown when the camera reports playback without
-// naming the track
-const soundtrackUnknownName = "Playing"
 
 // requestPlaybackState - asks the camera what it is currently playing.
 //
@@ -535,7 +527,7 @@ func processSoundtracksResponse(babyUID string, res *client.Response, stateManag
 // resumeSoundtrackName - the track to start when playback is switched on
 // without naming one: whatever played last, else the camera's first sound
 func resumeSoundtrackName(state *baby.State) string {
-	if current := state.GetSoundtrackName(); current != "" && current != baby.SoundtrackOffName && current != soundtrackUnknownName {
+	if current := state.GetSoundtrackName(); current != "" && current != baby.SoundtrackOffName {
 		return current
 	}
 

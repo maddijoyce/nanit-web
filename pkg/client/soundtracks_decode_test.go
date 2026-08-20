@@ -101,3 +101,42 @@ func TestUnknownFieldsInsidePlaybackAreLabelled(t *testing.T) {
 	assert.Equal(t, int32(6), unknown[0].Tag)
 	assert.Equal(t, `"Wind.wav"`, unknown[0].Value)
 }
+
+// The exact 30 bytes the camera sent on Response.playback while Wind was
+// playing. Encoding the same message here must reproduce them, which is what
+// makes a PUT_PLAYBACK look to the camera like its own representation.
+func TestPlaybackEncodingMatchesCapturedBytes(t *testing.T) {
+	captured := []byte("\x08\x00\x1a\x0c\x08\x00\x12\x08Wind.wav\x22\x0c\x08\x00\x12\x08Wind.wav")
+
+	encoded, err := proto.Marshal(&client.Playback{
+		Status:             client.Playback_STARTED.Enum(),
+		Soundtrack:         client.NewSoundtrackMessage("Wind.wav"),
+		SelectedSoundtrack: client.NewSoundtrackMessage("Wind.wav"),
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, captured, encoded)
+}
+
+// And the reverse: the captured bytes must decode into the mapped fields
+func TestCapturedPlaybackDecodesToSoundtrack(t *testing.T) {
+	captured := []byte("\x08\x00\x1a\x0c\x08\x00\x12\x08Wind.wav\x22\x0c\x08\x00\x12\x08Wind.wav")
+
+	playback := &client.Playback{}
+	require.NoError(t, proto.Unmarshal(captured, playback))
+
+	assert.Equal(t, client.Playback_STARTED, playback.GetStatus())
+	assert.Equal(t, "Wind.wav", playback.GetSoundtrack().GetName())
+	assert.Equal(t, "Wind.wav", playback.GetSelectedSoundtrack().GetName())
+	assert.Equal(t, "Wind.wav", client.PlaybackSoundtrackName(playback))
+	assert.Empty(t, client.DescribeUnknownFields(playback))
+}
+
+// Stopped carries only the status
+func TestCapturedStoppedPlayback(t *testing.T) {
+	playback := &client.Playback{}
+	require.NoError(t, proto.Unmarshal([]byte("\x08\x01"), playback))
+
+	assert.Equal(t, client.Playback_STOPPED, playback.GetStatus())
+	assert.Equal(t, "", client.PlaybackSoundtrackName(playback))
+}

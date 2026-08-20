@@ -57,21 +57,36 @@ func TestProcessPlaybackStopped(t *testing.T) {
 	assert.Equal(t, baby.SoundtrackOffName, state.GetSoundtrackName())
 }
 
-// A start that names the track should adopt that name
+// A start that names the track adopts it. Captured shape: the camera reports
+// the Soundtrack on both field 3 and field 4.
 func TestProcessPlaybackStartedWithName(t *testing.T) {
 	stateManager := baby.NewStateManager()
 
-	playback := &client.Playback{Status: client.Playback_STARTED.Enum()}
-	client.SetUnknownBytesField(playback, client.SoundtrackNameFieldTag, []byte("Birds.wav"))
-
-	processPlayback("baby1", playback, stateManager)
+	processPlayback("baby1", &client.Playback{
+		Status:             client.Playback_STARTED.Enum(),
+		Soundtrack:         client.NewSoundtrackMessage("Birds.wav"),
+		SelectedSoundtrack: client.NewSoundtrackMessage("Birds.wav"),
+	}, stateManager)
 
 	state := stateManager.GetBabyState("baby1")
 	assert.True(t, state.GetSoundtrackPlaying())
 	assert.Equal(t, "Birds.wav", state.GetSoundtrackName())
 }
 
-// A start with no name must keep the last known track rather than blanking it
+// Field 4 alone must still resolve, since the two fields are not known to be
+// interchangeable in every case
+func TestProcessPlaybackFallsBackToSelectedSoundtrack(t *testing.T) {
+	stateManager := baby.NewStateManager()
+
+	processPlayback("baby1", &client.Playback{
+		Status:             client.Playback_STARTED.Enum(),
+		SelectedSoundtrack: client.NewSoundtrackMessage("Waves.wav"),
+	}, stateManager)
+
+	assert.Equal(t, "Waves.wav", stateManager.GetBabyState("baby1").GetSoundtrackName())
+}
+
+// A start with no track named must not blank what is known
 func TestProcessPlaybackStartedWithoutNameKeepsLastKnown(t *testing.T) {
 	stateManager := baby.NewStateManager()
 	stateManager.Update("baby1", *baby.NewState().SetSoundtrack("Waves.wav"))
@@ -148,23 +163,6 @@ func TestDebugGetRequestWithoutSelector(t *testing.T) {
 	assert.Nil(t, probe.GetControl_)
 	assert.Nil(t, probe.GetStatus_)
 	assert.Nil(t, probe.GetSensorData)
-}
-
-// While selection is unverified the send path must not claim a specific track
-// is playing, since the camera plays whatever it already had selected.
-func TestSoundtrackSelectionUnverifiedDoesNotAssertTrack(t *testing.T) {
-	if client.SoundtrackSelectionVerified {
-		t.Skip("selection has been verified; the optimistic path applies instead")
-	}
-
-	// The switch must still show "on", so playing is recorded even though the
-	// track name is not.
-	state := baby.NewState()
-	state.SetSoundtrackPlaying(true)
-
-	assert.True(t, state.GetSoundtrackPlaying())
-	assert.Equal(t, baby.SoundtrackOffName, state.GetSoundtrackName(),
-		"An unverified selection must not be presented as the playing track")
 }
 
 func TestSetSoundtrackPlayingFalseResetsName(t *testing.T) {
