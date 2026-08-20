@@ -257,9 +257,11 @@ func (conn *Connection) soundtrackSelectEntity(babyUID string, device discoveryD
 	}
 
 	return discoveryEntity{
-		Name:         "Soundtrack Selection",
-		UniqueID:     fmt.Sprintf("nanit_%v_soundtrack", babyUID),
-		StateTopic:   fmt.Sprintf("%v/babies/%v/soundtrack_name", conn.Opts.TopicPrefix, babyUID),
+		Name:     "Soundtrack Selection",
+		UniqueID: fmt.Sprintf("nanit_%v_soundtrack", babyUID),
+		// Display names, matching Options. A state outside the options list is
+		// discarded by Home Assistant and the dropdown snaps back.
+		StateTopic:   fmt.Sprintf("%v/babies/%v/soundtrack_display_name", conn.Opts.TopicPrefix, babyUID),
 		CommandTopic: fmt.Sprintf("%v/babies/%v/soundtrack/select", conn.Opts.TopicPrefix, babyUID),
 		Options:      options,
 		Icon:         "mdi:playlist-music",

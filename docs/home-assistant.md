@@ -96,6 +96,13 @@ broker`. If that line is missing the broker URL, credentials or network path is
 wrong. If it is present but no device shows up, confirm the discovery prefix
 matches the one configured in the HA MQTT integration.
 
+**The Soundtrack Selection dropdown snaps back to Off.** Home Assistant
+discards a select state that is not one of the entity's options. The state topic
+`soundtrack_display_name` carries the name without its file extension, matching
+the options; `soundtrack_name` carries the raw filename and is not what the
+select reads. If you see this after an upgrade, the retained discovery config is
+stale — restart the bridge so it republishes.
+
 **Entities exist but never update.** State is published to
 `nanit/babies/<baby_uid>/<key>`. Watch it with:
 

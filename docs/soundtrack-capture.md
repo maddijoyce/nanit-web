@@ -170,7 +170,9 @@ Over MQTT — note the select takes **display names** (no `.wav`):
 ```bash
 mosquitto_pub -t 'nanit/babies/YOUR_UID/soundtrack/select' -m 'White Noise'
 mosquitto_pub -t 'nanit/babies/YOUR_UID/soundtrack/switch' -m 'false'
-mosquitto_sub -t 'nanit/babies/YOUR_UID/soundtrack_name' -v
+# soundtrack_name carries the filename; soundtrack_display_name carries the
+# name without its extension, which is what the HA select reads
+mosquitto_sub -t 'nanit/babies/YOUR_UID/soundtrack_#' -v
 ```
 
 In Home Assistant the camera device carries a **Soundtrack** switch (start/stop)

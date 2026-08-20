@@ -46,8 +46,17 @@ type Soundtrack struct {
 func NewSoundtrack(name string) Soundtrack {
 	return Soundtrack{
 		Name:        name,
-		DisplayName: strings.TrimSuffix(name, filepath.Ext(name)),
+		DisplayName: SoundtrackDisplayName(name),
 	}
+}
+
+// SoundtrackDisplayName - a camera filename without its extension.
+//
+// Home Assistant rejects a select state that is not one of the entity's
+// options, so whatever is published as state must be derived exactly the same
+// way as the options themselves.
+func SoundtrackDisplayName(name string) string {
+	return strings.TrimSuffix(name, filepath.Ext(name))
 }
 
 // DeviceInfo - struct holding device information from Nanit API responses
@@ -104,8 +113,12 @@ type State struct {
 	Volume           *int32
 
 	// SoundtrackName - the sound the camera is currently playing, "Off" when silent
-	SoundtrackName    *string
-	SoundtrackPlaying *bool
+	SoundtrackName *string
+	// SoundtrackDisplayName - SoundtrackName without its file extension. This is
+	// what the Home Assistant select entity reads, because its options are
+	// display names and a state outside that list is discarded.
+	SoundtrackDisplayName *string
+	SoundtrackPlaying     *bool
 
 	// Device information cache
 	DeviceInfo *DeviceInfo `internal:"true"`
@@ -469,6 +482,9 @@ func (s *State) SetSoundtrack(name string) *State {
 
 	s.SoundtrackName = &name
 
+	displayName := SoundtrackDisplayName(name)
+	s.SoundtrackDisplayName = &displayName
+
 	playing := !strings.EqualFold(name, SoundtrackOffName)
 	s.SoundtrackPlaying = &playing
 
@@ -483,9 +499,19 @@ func (s *State) SetSoundtrackPlaying(playing bool) *State {
 	if !playing {
 		name := SoundtrackOffName
 		s.SoundtrackName = &name
+		s.SoundtrackDisplayName = &name
 	}
 
 	return s
+}
+
+// GetSoundtrackDisplayName - safely returns the active soundtrack's display name
+func (s *State) GetSoundtrackDisplayName() string {
+	if s.SoundtrackDisplayName != nil {
+		return *s.SoundtrackDisplayName
+	}
+
+	return SoundtrackOffName
 }
 
 // GetSoundtrackName - safely returns the active soundtrack name

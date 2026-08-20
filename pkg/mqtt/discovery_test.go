@@ -92,7 +92,8 @@ func TestSoundtrackSelectUsesCameraCatalog(t *testing.T) {
 	})
 	assert.Equal(t, []string{"Off", "White Noise", "Ocean"}, populated.Options)
 	assert.Equal(t, "nanit/babies/baby1/soundtrack/select", populated.CommandTopic)
-	assert.Equal(t, "nanit/babies/baby1/soundtrack_name", populated.StateTopic)
+	// Display names, matching Options — see TestSoundtrackSelectStateIsAlwaysAValidOption
+	assert.Equal(t, "nanit/babies/baby1/soundtrack_display_name", populated.StateTopic)
 }
 
 // Components must not receive keys they do not understand, so the optional
@@ -224,4 +225,57 @@ func TestSoundtrackSelectGating(t *testing.T) {
 
 	assert.Equal(t, []string{"Off", "White Noise", "Birds"}, entity.Options)
 	assert.Equal(t, "nanit/babies/baby1/soundtrack/select", entity.CommandTopic)
+}
+
+// Home Assistant discards a select state that is not one of the entity's
+// options, and the dropdown snaps back to its last valid value. So whatever
+// lands on the select's state topic must appear in Options.
+//
+// This regressed once: Options carried display names ("Wind") while the state
+// topic published filenames ("Wind.wav"), and the dropdown kept reverting.
+func TestSoundtrackSelectStateIsAlwaysAValidOption(t *testing.T) {
+	if !client.SoundtrackSelectionVerified {
+		t.Skip("select is withheld while selection is unverified")
+	}
+
+	catalog := []baby.Soundtrack{
+		baby.NewSoundtrack("White Noise.wav"),
+		baby.NewSoundtrack("Birds.wav"),
+		baby.NewSoundtrack("Waves.wav"),
+		baby.NewSoundtrack("Wind.wav"),
+	}
+
+	conn := testConnection()
+	entity := conn.soundtrackSelectEntity("baby1", discoveryDevice{}, catalog)
+
+	// The state topic must be the key the state actually publishes under
+	assert.Equal(t, "nanit/babies/baby1/soundtrack_display_name", entity.StateTopic)
+
+	options := map[string]bool{}
+	for _, option := range entity.Options {
+		options[option] = true
+	}
+
+	// Every sound the camera reports, plus stopped, must round-trip
+	for _, entry := range append(catalog, baby.Soundtrack{Name: baby.SoundtrackOffName}) {
+		state := baby.NewState()
+		state.SetSoundtrack(entry.Name)
+
+		published := state.AsMap(false)["soundtrack_display_name"]
+		require.NotNil(t, published, "state must publish a display name for %q", entry.Name)
+
+		assert.True(t, options[published.(string)],
+			"published state %q for %q is not one of the select options %v",
+			published, entry.Name, entity.Options)
+	}
+}
+
+// Stopping must also land on a valid option
+func TestSoundtrackSelectStateWhenStopped(t *testing.T) {
+	state := baby.NewState()
+	state.SetSoundtrack("Wind.wav")
+	state.SetSoundtrackPlaying(false)
+
+	assert.Equal(t, baby.SoundtrackOffName, state.GetSoundtrackDisplayName())
+	assert.Equal(t, baby.SoundtrackOffName, state.AsMap(false)["soundtrack_display_name"])
 }
