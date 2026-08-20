@@ -76,6 +76,7 @@ type State struct {
 	HumidityMilli    *int32
 	NightLight       *bool
 	Standby          *bool
+	Volume           *int32
 
 	// Device information cache
 	DeviceInfo *DeviceInfo `internal:"true"`
@@ -413,6 +414,21 @@ func (s *State) SetStandby(enabled bool) *State {
 
 func (s *State) GetStandby() bool {
 	return s.Standby != nil && *s.Standby
+}
+
+// SetVolume - mutates field, returns itself
+func (s *State) SetVolume(value int32) *State {
+	s.Volume = &value
+	return s
+}
+
+// GetVolume - safely returns value
+func (s *State) GetVolume() int32 {
+	if s.Volume != nil {
+		return *s.Volume
+	}
+
+	return 0
 }
 
 // SetDeviceInfo - mutates device info field, returns itself

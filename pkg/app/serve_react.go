@@ -127,6 +127,10 @@ func setupAPIRoutes(babies []baby.Baby, dataDir DataDirectories, stateManager *b
 		handleControlAPI(w, r, "standby", babies, stateManager, app)
 	})
 
+	http.HandleFunc("/api/control/volume", func(w http.ResponseWriter, r *http.Request) {
+		handleControlAPI(w, r, "volume", babies, stateManager, app)
+	})
+
 	// Device info endpoint
 	http.HandleFunc("/api/device-info/", func(w http.ResponseWriter, r *http.Request) {
 		handleDeviceInfoAPI(w, r, babies, stateManager)

@@ -2,6 +2,8 @@ package mqtt
 
 import (
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 
 type SendLightCommandHandler func(nightLightState bool)
 type SendStandbyCommandHandler func(standbyState bool)
+type SendVolumeCommandHandler func(level int32)
 
 // Connection - MQTT context
 type Connection struct {
@@ -21,6 +24,7 @@ type Connection struct {
 	client                    MQTT.Client
 	sendLightCommandHandler   SendLightCommandHandler
 	sendStandbyCommandHandler SendStandbyCommandHandler
+	sendVolumeCommandHandler  SendVolumeCommandHandler
 }
 
 // NewConnection - constructor
@@ -69,7 +73,7 @@ func (conn *Connection) subscribeToLightCommand() {
 	lightMessageHandler := func(mqttConn MQTT.Client, msg MQTT.Message) {
 		// Extract baby UID and command from topic
 		parts := strings.Split(msg.Topic(), "/")
-		if len(parts) < 4 {
+		if len(parts) < 5 {
 			log.Error().Str("topic", msg.Topic()).Msg("Invalid command topic format")
 			return
 		}
@@ -92,6 +96,11 @@ func (conn *Connection) subscribeToLightCommand() {
 				Bool("enabled", enabled).
 				Str("payload", string(msg.Payload())).
 				Msg("Received light command")
+
+			if conn.sendLightCommandHandler == nil {
+				log.Warn().Str("baby", babyUID).Msg("Received light command before a camera connection was registered, ignoring")
+				return
+			}
 
 			conn.sendLightCommandHandler(enabled)
 		default:
@@ -117,7 +126,7 @@ func (conn *Connection) subscribeToStandbyCommand() {
 	standbyMessageHandler := func(mqttConn MQTT.Client, msg MQTT.Message) {
 		// Extract baby UID and command from topic
 		parts := strings.Split(msg.Topic(), "/")
-		if len(parts) < 4 {
+		if len(parts) < 5 {
 			log.Error().Str("topic", msg.Topic()).Msg("Invalid command topic format")
 			return
 		}
@@ -141,6 +150,11 @@ func (conn *Connection) subscribeToStandbyCommand() {
 				Str("payload", string(msg.Payload())).
 				Msg("Received standby command")
 
+			if conn.sendStandbyCommandHandler == nil {
+				log.Warn().Str("baby", babyUID).Msg("Received standby command before a camera connection was registered, ignoring")
+				return
+			}
+
 			conn.sendStandbyCommandHandler(enabled)
 		default:
 			log.Warn().Str("command", command).Msg("Unknown command received")
@@ -148,6 +162,67 @@ func (conn *Connection) subscribeToStandbyCommand() {
 	}
 
 	if token := conn.client.Subscribe(commandTopic, 0, standbyMessageHandler); token.Wait() && token.Error() != nil {
+		log.Error().Err(token.Error()).Str("topic", commandTopic).Msg("Failed to subscribe to command topic")
+	}
+}
+
+func (conn *Connection) RegisterVolumeHandler(sendVolumeCommandHandler SendVolumeCommandHandler) {
+	conn.sendVolumeCommandHandler = sendVolumeCommandHandler
+}
+
+func (conn *Connection) subscribeToVolumeCommand() {
+	commandTopic := fmt.Sprintf("%v/babies/+/volume/set", conn.Opts.TopicPrefix)
+	log.Debug().
+		Str("topic", commandTopic).
+		Msg("Subscribing to command topic")
+
+	volumeMessageHandler := func(mqttConn MQTT.Client, msg MQTT.Message) {
+		// Extract baby UID and command from topic
+		parts := strings.Split(msg.Topic(), "/")
+		if len(parts) < 5 {
+			log.Error().Str("topic", msg.Topic()).Msg("Invalid command topic format")
+			return
+		}
+
+		babyUID := parts[2]
+		command := parts[4]
+
+		// Validate baby UID
+		if err := baby.EnsureValidBabyUID(babyUID); err != nil {
+			log.Error().Err(err).Str("topic", msg.Topic()).Msg("Invalid baby UID in MQTT volume topic")
+			return
+		}
+
+		// Handle different commands
+		switch command {
+		case "set":
+			payload := strings.TrimSpace(string(msg.Payload()))
+
+			// Home Assistant number entities publish floats ("42.0") as readily as ints
+			level, err := strconv.ParseFloat(payload, 64)
+			if err != nil {
+				log.Error().Err(err).Str("payload", payload).Msg("Unable to parse volume command payload")
+				return
+			}
+
+			log.Debug().
+				Str("baby", babyUID).
+				Float64("level", level).
+				Str("payload", payload).
+				Msg("Received volume command")
+
+			if conn.sendVolumeCommandHandler == nil {
+				log.Warn().Str("baby", babyUID).Msg("Received volume command before a camera connection was registered, ignoring")
+				return
+			}
+
+			conn.sendVolumeCommandHandler(int32(math.Round(level)))
+		default:
+			log.Warn().Str("command", command).Msg("Unknown command received")
+		}
+	}
+
+	if token := conn.client.Subscribe(commandTopic, 0, volumeMessageHandler); token.Wait() && token.Error() != nil {
 		log.Error().Err(token.Error()).Str("topic", commandTopic).Msg("Failed to subscribe to command topic")
 	}
 }
@@ -185,6 +260,7 @@ func runMqtt(conn *Connection, attempt utils.AttemptContext) {
 	// Subscribe to accept light mqtt messages
 	conn.subscribeToLightCommand()
 	conn.subscribeToStandbyCommand()
+	conn.subscribeToVolumeCommand()
 
 	// Wait until interrupt signal is received
 	<-attempt.Done()

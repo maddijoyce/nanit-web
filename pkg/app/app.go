@@ -249,6 +249,9 @@ func (app *App) runWebsocket(babyUID string, conn *client.WebsocketConnection, c
 		app.MQTTConnection.RegisterStandyHandler(func(enabled bool) {
 			sendStandbyCommand(enabled, conn)
 		})
+		app.MQTTConnection.RegisterVolumeHandler(func(level int32) {
+			sendVolumeCommand(level, conn)
+		})
 	}
 
 	// Get the initial state of the light

@@ -118,6 +118,9 @@ func processStandby(babyUID string, settings *client.Settings, stateManager *bab
 	}
 	if settings.Volume != nil {
 		deviceInfo.Volume = settings.Volume
+		// Mirror onto the top-level state as well: DeviceInfo is marked internal
+		// and therefore never reaches the MQTT state topics.
+		stateUpdate.SetVolume(*settings.Volume)
 	}
 	if settings.StatusLightOn != nil {
 		deviceInfo.StatusLight = settings.StatusLightOn
@@ -222,6 +225,41 @@ func sendStandbyCommand(standbyState bool, conn *client.WebsocketConnection) {
 	conn.SendRequest(client.RequestType_PUT_SETTINGS, &client.Request{
 		Settings: &client.Settings{
 			SleepMode: &standbyState,
+		},
+	})
+}
+
+// Bounds for Settings.volume. The protobuf schema types it as a bare int32 and
+// does not document a range; 0-100 matches the percentage the Nanit app shows.
+// The value reported by GET_SETTINGS is logged at debug level (see
+// processStandby) so the real range can be confirmed against a live camera.
+const (
+	MinVolume int32 = 0
+	MaxVolume int32 = 100
+)
+
+// clampVolume - constrains a requested level to the range the camera accepts
+func clampVolume(level int32) int32 {
+	if level < MinVolume {
+		return MinVolume
+	}
+	if level > MaxVolume {
+		return MaxVolume
+	}
+	return level
+}
+
+func sendVolumeCommand(level int32, conn *client.WebsocketConnection) {
+	volume := clampVolume(level)
+	if volume != level {
+		log.Warn().Int32("requested", level).Int32("clamped", volume).Msg("Volume out of range, clamping")
+	}
+
+	log.Debug().Int32("volume", volume).Msg("Sending volume command")
+
+	conn.SendRequest(client.RequestType_PUT_SETTINGS, &client.Request{
+		Settings: &client.Settings{
+			Volume: &volume,
 		},
 	})
 }

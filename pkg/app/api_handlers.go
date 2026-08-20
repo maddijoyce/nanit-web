@@ -39,6 +39,7 @@ func handleStatusAPI(w http.ResponseWriter, r *http.Request, babies []baby.Baby,
 			"is_night":        babyState.IsNight,
 			"night_light":     babyState.GetNightLight(),
 			"standby":         babyState.GetStandby(),
+			"volume":          babyState.GetVolume(),
 			"websocket_alive": babyState.GetIsWebsocketAlive(),
 			"stream_state":    babyState.GetStreamState(),
 		}
@@ -75,6 +76,7 @@ func handleControlAPI(w http.ResponseWriter, r *http.Request, controlType string
 	var requestData struct {
 		BabyUID string `json:"baby_uid"`
 		Action  string `json:"action"`
+		Value   *int32 `json:"value,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&requestData); err != nil {
@@ -138,6 +140,24 @@ func handleControlAPI(w http.ResponseWriter, r *http.Request, controlType string
 				Msg("Standby toggle command sent")
 		} else {
 			http.Error(w, "Invalid action for standby", http.StatusBadRequest)
+			return
+		}
+
+	case "volume":
+		if requestData.Action == "set" {
+			if requestData.Value == nil {
+				http.Error(w, "value is required for volume set", http.StatusBadRequest)
+				return
+			}
+
+			sendVolumeCommand(*requestData.Value, conn)
+
+			log.Info().
+				Str("baby_uid", requestData.BabyUID).
+				Int32("value", *requestData.Value).
+				Msg("Volume set command sent")
+		} else {
+			http.Error(w, "Invalid action for volume", http.StatusBadRequest)
 			return
 		}
 

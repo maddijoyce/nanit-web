@@ -50,3 +50,32 @@ func TestStateMergeDifferent(t *testing.T) {
 	assert.Equal(t, 20.0, s3.GetHumidity())
 	assert.Equal(t, baby.StreamState_Alive, s3.GetStreamState())
 }
+
+func TestStateVolumeIsPublished(t *testing.T) {
+	s := baby.State{}
+	s.SetVolume(42)
+
+	m := s.AsMap(false)
+
+	// Volume must reach the MQTT state topics, so it has to survive AsMap
+	// without the internal marker that hides DeviceInfo.
+	assert.Equal(t, int64(42), m["volume"], "Volume should be exposed as a non-internal field")
+}
+
+func TestStateVolumeMerge(t *testing.T) {
+	s1 := &baby.State{}
+	s1.SetVolume(10)
+
+	s2 := &baby.State{}
+	s2.SetVolume(80)
+
+	merged := s1.Merge(s2)
+	assert.NotSame(t, s1, merged, "Changed volume should produce a new state")
+	assert.Equal(t, int32(80), merged.GetVolume())
+
+	// An update that does not touch volume must preserve it
+	s3 := &baby.State{}
+	s3.SetNightLight(true)
+	preserved := merged.Merge(s3)
+	assert.Equal(t, int32(80), preserved.GetVolume(), "Volume should survive unrelated updates")
+}
