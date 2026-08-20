@@ -309,6 +309,10 @@ func (app *App) runWebsocket(babyUID string, conn *client.WebsocketConnection, c
 	// broadcasts a stop but never a start or a track change.
 	requestPlaybackState(babyUID, conn, app.BabyStateManager)
 
+	// ...and keep asking, since a sound started from the Nanit app is never
+	// announced to us.
+	pollPlaybackState(babyUID, conn, app.BabyStateManager, childCtx.Done())
+
 	// Ask for logs
 	// conn.SendRequest(client.RequestType_GET_LOGS, &client.Request{
 	// 	GetLogs: &client.GetLogs{

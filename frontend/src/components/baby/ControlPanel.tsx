@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { mutate } from 'swr'
 import { api } from '@/lib/api'
 import type { Baby } from '@/types/api'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
@@ -84,7 +85,7 @@ export default function ControlPanel({ baby }: ControlPanelProps) {
     setLoading('nightlight', true)
     try {
       await api.toggleNightLight(baby.uid)
-      // Optionally refresh status here
+      refreshStatus()
     } finally {
       setLoading('nightlight', false)
     }
@@ -94,7 +95,7 @@ export default function ControlPanel({ baby }: ControlPanelProps) {
     setLoading('standby', true)
     try {
       await api.toggleStandby(baby.uid)
-      // Optionally refresh status here
+      refreshStatus()
     } finally {
       setLoading('standby', false)
     }
@@ -114,12 +115,59 @@ export default function ControlPanel({ baby }: ControlPanelProps) {
     setLoading('volume', true)
     try {
       await api.setVolume(baby.uid, level)
+      refreshStatus()
     } catch (error) {
       console.error('Volume command failed:', error)
       // Snap back to the last value the device reported
       setVolume(baby.volume ?? 0)
     } finally {
       setLoading('volume', false)
+    }
+  }
+
+  // The status endpoint is polled on an interval, but a command should show up
+  // straight away. The second refresh catches the reconciled value: the backend
+  // re-reads playback state from the camera about 1.5s after each command, so
+  // an immediate refresh alone would show what was asked for rather than what
+  // the camera did.
+  const refreshStatus = () => {
+    mutate('/status')
+    setTimeout(() => mutate('/status'), 2000)
+  }
+
+  const soundtracks = baby.available_soundtracks ?? []
+  const isSoundtrackPlaying = baby.soundtrack_playing ?? false
+
+  const [soundtrack, setSoundtrack] = useState<string>(baby.soundtrack ?? 'Off')
+
+  useEffect(() => {
+    if (baby.soundtrack) {
+      setSoundtrack(baby.soundtrack)
+    }
+  }, [baby.soundtrack])
+
+  const handleSoundtrackSelect = async (name: string) => {
+    setSoundtrack(name)
+    setLoading('soundtrack', true)
+    try {
+      await api.setSoundtrack(baby.uid, name)
+      refreshStatus()
+    } catch (error) {
+      console.error('Soundtrack command failed:', error)
+      // Snap back to what the camera last reported
+      setSoundtrack(baby.soundtrack ?? 'Off')
+    } finally {
+      setLoading('soundtrack', false)
+    }
+  }
+
+  const handleSoundtrackToggle = async () => {
+    setLoading('soundtrackToggle', true)
+    try {
+      await api.toggleSoundtrack(baby.uid)
+      refreshStatus()
+    } finally {
+      setLoading('soundtrackToggle', false)
     }
   }
 
@@ -154,8 +202,47 @@ export default function ControlPanel({ baby }: ControlPanelProps) {
         >
           {baby.standby ? 'Exit Standby' : 'Enter Standby'}
         </ControlButton>
+
+        <ControlButton
+          onClick={handleSoundtrackToggle}
+          disabled={isDisabled || (!isSoundtrackPlaying && soundtracks.length === 0)}
+          loading={loadingStates.soundtrackToggle || false}
+          variant="secondary"
+        >
+          {isSoundtrackPlaying ? '⏹ Stop Sound' : '▶ Play Sound'}
+        </ControlButton>
       </div>
       
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
+          <label htmlFor={`soundtrack-${baby.uid}`} className="text-sm font-medium text-nanit-gray-700">
+            Sound
+          </label>
+          <span className="text-sm text-nanit-gray-600">
+            {isSoundtrackPlaying ? 'Playing' : 'Stopped'}{loadingStates.soundtrack ? ' …' : ''}
+          </span>
+        </div>
+        <select
+          id={`soundtrack-${baby.uid}`}
+          value={soundtrack}
+          disabled={isDisabled || loadingStates.soundtrack || soundtracks.length === 0}
+          onChange={(e) => handleSoundtrackSelect(e.target.value)}
+          className="w-full rounded border border-nanit-gray-300 bg-white px-2 py-1 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <option value="Off">Off</option>
+          {soundtracks.map((entry) => (
+            <option key={entry.name} value={entry.name}>
+              {entry.display_name}
+            </option>
+          ))}
+        </select>
+        {soundtracks.length === 0 && (
+          <div className="text-xs text-nanit-gray-500">
+            Waiting for the camera to report its available sounds.
+          </div>
+        )}
+      </div>
+
       <div className="space-y-1">
         <div className="flex items-center justify-between">
           <label htmlFor={`volume-${baby.uid}`} className="text-sm font-medium text-nanit-gray-700">

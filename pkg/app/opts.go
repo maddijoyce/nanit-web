@@ -20,7 +20,7 @@ type Opts struct {
 
 	// DebugControl - enables the protocol experiment endpoints under /api/debug.
 	// These send operator-supplied bytes to the camera and must stay off in
-	// normal operation. See SOUNDTRACK_CAPTURE.md.
+	// normal operation. See docs/soundtrack-capture.md.
 	DebugControl bool
 }
 

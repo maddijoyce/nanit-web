@@ -159,6 +159,29 @@ class ApiClient {
     });
   }
 
+  async setSoundtrack(babyUid: string, name: string): Promise<ControlResponse> {
+    const payload: ControlRequest = {
+      baby_uid: babyUid,
+      action: 'set',
+      name,
+    };
+    return this.request<ControlResponse>('/control/soundtrack', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async toggleSoundtrack(babyUid: string): Promise<ControlResponse> {
+    const payload: ControlRequest = {
+      baby_uid: babyUid,
+      action: 'toggle',
+    };
+    return this.request<ControlResponse>('/control/soundtrack', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   // Authentication
   async login(email: string, password: string): Promise<LoginResponse> {
     const payload: LoginRequest = { email, password };

@@ -22,7 +22,7 @@ import (
 // unless NANIT_DEBUG_CONTROL=true is set explicitly. They are never routed in a
 // normal run: see registerDebugRoutes.
 //
-// SOUNDTRACK_CAPTURE.md is the runbook for using them.
+// docs/soundtrack-capture.md is the runbook for using them.
 // ---------------------------------------------------------------------------
 
 // debugControlRequest - an arbitrary field to place on a PUT_CONTROL message

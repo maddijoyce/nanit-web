@@ -138,7 +138,7 @@ Everything needed for soundtrack control is mapped:
 | List built-in sounds | Working — `GET_SOUNDTRACKS` |
 | Start / stop | Working — `PUT_PLAYBACK` |
 | Choose a track | Implemented — `Playback.soundtrack` + `selectedSoundtrack` |
-| Read what is playing | Working — `GET_PLAYBACK` |
+| Read what is playing | Working — `GET_PLAYBACK`, polled every 5 minutes |
 | Volume | Working — `Settings.volume` |
 
 `SoundtrackSelectionVerified` in `pkg/client/soundtrack.go` is now `true`, so the
@@ -178,14 +178,14 @@ and a **Soundtrack Selection** select listing Off plus the camera's own sounds.
 
 ### Known limitations
 
-**The camera broadcasts stops, but not starts and not track changes.** Starting
-or switching tracks from the phone app is therefore not pushed here. State is
-refreshed by `GET_PLAYBACK` at startup and after each command this bridge sends,
-so it is correct for anything done from Home Assistant or the dashboard, and can
-lag a change made in the Nanit app until the next command or restart.
+**The camera broadcasts stops, but not starts and not track changes.** Nothing
+pushes a track change to us, so playback state is read with `GET_PLAYBACK`
+instead: at startup, shortly after every command this bridge sends, and on a
+five-minute poll. A sound started or switched from the Nanit app therefore shows
+up within five minutes rather than instantly.
 
-Polling `GET_PLAYBACK` on a timer would close that gap; it is not done today to
-avoid extra traffic to the camera.
+Shortening `playbackPollInterval` in `pkg/app/websocket_handlers.go` trades
+camera traffic for freshness.
 
 ## 4. Turn the harness off
 

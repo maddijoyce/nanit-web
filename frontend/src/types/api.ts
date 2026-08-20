@@ -1,4 +1,12 @@
 // API Response Types
+
+/** A sound built into the camera. The camera identifies sounds by filename;
+ *  display_name is the same value without its extension. */
+export interface Soundtrack {
+  name: string;
+  display_name: string;
+}
+
 export interface Baby {
   uid: string;
   name: string;
@@ -10,6 +18,8 @@ export interface Baby {
   standby?: boolean;
   volume?: number;
   soundtrack?: string;
+  soundtrack_playing?: boolean;
+  available_soundtracks?: Soundtrack[] | null;
   websocket_alive: boolean;
   stream_state?: string;
 }
@@ -131,6 +141,7 @@ export interface ControlRequest {
   baby_uid: string;
   action: 'toggle' | 'set';
   value?: number;
+  name?: string;
 }
 
 export interface ControlResponse {

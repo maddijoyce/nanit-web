@@ -358,7 +358,7 @@ func logInboundFrame(babyUID string, m *client.Message) {
 // Stopping needs no name, and the camera does not broadcast track changes, so it
 // could not be read off the wire. client.SoundtrackNameFieldTag holds the current
 // hypothesis and is written as an unknown field, so other tags can be tried
-// without regenerating the schema. See SOUNDTRACK_CAPTURE.md.
+// without regenerating the schema. See docs/soundtrack-capture.md.
 // ---------------------------------------------------------------------------
 
 // sendSoundCommand - starts the named soundtrack, or stops playback when given
@@ -475,6 +475,31 @@ func requestPlaybackState(babyUID string, conn *client.WebsocketConnection, stat
 		}
 
 		processPlayback(babyUID, res.GetPlayback(), stateManager)
+	}()
+}
+
+// playbackPollInterval - how often playback state is re-read from the camera.
+//
+// The camera broadcasts a stop but never a start and never a track change, so a
+// sound started from the Nanit app is invisible until something asks. Polling
+// closes that gap; five minutes keeps the traffic negligible while bounding how
+// stale the reported track can be.
+const playbackPollInterval = 5 * time.Minute
+
+// pollPlaybackState - re-reads playback state until the connection ends
+func pollPlaybackState(babyUID string, conn *client.WebsocketConnection, stateManager *baby.StateManager, done <-chan struct{}) {
+	go func() {
+		ticker := time.NewTicker(playbackPollInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				requestPlaybackState(babyUID, conn, stateManager)
+			}
+		}
 	}()
 }
 

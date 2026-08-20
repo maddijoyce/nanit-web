@@ -31,18 +31,22 @@ func handleStatusAPI(w http.ResponseWriter, r *http.Request, babies []baby.Baby,
 	for _, b := range babies {
 		babyState := stateManager.GetBabyState(b.UID)
 		babyStatus := map[string]interface{}{
-			"uid":             b.UID,
-			"name":            b.Name,
-			"camera_uid":      b.CameraUID,
-			"temperature":     babyState.GetTemperature(),
-			"humidity":        babyState.GetHumidity(),
-			"is_night":        babyState.IsNight,
-			"night_light":     babyState.GetNightLight(),
-			"standby":         babyState.GetStandby(),
-			"volume":          babyState.GetVolume(),
-			"soundtrack":      babyState.GetSoundtrackName(),
-			"websocket_alive": babyState.GetIsWebsocketAlive(),
-			"stream_state":    babyState.GetStreamState(),
+			"uid":                b.UID,
+			"name":               b.Name,
+			"camera_uid":         b.CameraUID,
+			"temperature":        babyState.GetTemperature(),
+			"humidity":           babyState.GetHumidity(),
+			"is_night":           babyState.IsNight,
+			"night_light":        babyState.GetNightLight(),
+			"standby":            babyState.GetStandby(),
+			"volume":             babyState.GetVolume(),
+			"soundtrack":         babyState.GetSoundtrackName(),
+			"soundtrack_playing": babyState.GetSoundtrackPlaying(),
+			// The dashboard needs the catalog to offer a choice; it is whatever
+			// the camera reported via GET_SOUNDTRACKS, not a hardcoded list.
+			"available_soundtracks": babyState.GetAvailableSoundtracks(),
+			"websocket_alive":       babyState.GetIsWebsocketAlive(),
+			"stream_state":          babyState.GetStreamState(),
 		}
 		status["babies"] = append(status["babies"].([]interface{}), babyStatus)
 	}

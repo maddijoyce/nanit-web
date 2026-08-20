@@ -14,7 +14,7 @@ import "google.golang.org/protobuf/proto"
 //   - PUT_PLAYBACK with status STARTED alone plays whatever the camera already
 //     had selected. The track is chosen by including the Soundtrack message.
 //
-// See SOUNDTRACK_CAPTURE.md for how this was established.
+// See docs/soundtrack-capture.md for how this was established.
 
 // SoundtrackSelectionVerified - whether choosing a specific track is known to
 // work. Gates the Home Assistant select entity.

@@ -127,7 +127,7 @@ func (conn *Connection) publishDiscovery(babyUID string) {
 		if !alreadyAnnounced {
 			log.Info().
 				Str("baby_uid", babyUID).
-				Msg("Soundtrack select entity withheld: track selection is unverified (see SOUNDTRACK_CAPTURE.md)")
+				Msg("Soundtrack select entity withheld: track selection is unverified (see docs/soundtrack-capture.md)")
 		}
 
 		return
