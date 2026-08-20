@@ -60,9 +60,12 @@ docker run -d \
 | `NANIT_MQTT_PASSWORD` | | MQTT password |
 | `NANIT_MQTT_CLIENT_ID` | `nanit` | MQTT client identifier |
 | `NANIT_MQTT_PREFIX` | `nanit` | MQTT topic prefix |
+| `NANIT_MQTT_DISCOVERY` | `true` | Publish Home Assistant MQTT discovery documents |
+| `NANIT_MQTT_DISCOVERY_PREFIX` | `homeassistant` | Discovery topic prefix Home Assistant listens on |
 | `NANIT_EVENTS_POLLING` | `false` | Enable polling for event messages |
 | `NANIT_EVENTS_POLLING_INTERVAL` | `30` | Seconds between event polling requests |
 | `NANIT_EVENTS_MESSAGE_TIMEOUT` | `300` | Seconds after which to disregard old events |
+| `NANIT_DEBUG_CONTROL` | `false` | Expose the `/api/debug/*` protocol experiment endpoints. Sends operator-supplied bytes to the camera — leave off in normal use. See [SOUNDTRACK_CAPTURE.md](SOUNDTRACK_CAPTURE.md) |
 
 **Note:** Nanit credentials (email/password) are configured via the web dashboard at `http://localhost:8080`, not through environment variables.
 
@@ -138,14 +141,34 @@ The modern React-based dashboard at `http://localhost:8080` provides comprehensi
 
 ### MQTT Auto-Discovery (Recommended)
 
-When MQTT is enabled, the application automatically creates Home Assistant entities:
+When MQTT is enabled, the application publishes Home Assistant discovery
+documents and the entities are created automatically, grouped under one device
+per camera:
 
-- **Camera**: RTMP video feed
-- **Sensors**: Temperature, humidity, day/night status
-- **Binary Sensors**: Night mode, streaming status
-- **Switches**: Night light, standby mode
+| Entity | Type | Notes |
+|---|---|---|
+| Temperature | sensor | °C |
+| Humidity | sensor | % |
+| Night | binary sensor | Day/night status |
+| Stream Alive | binary sensor | Local stream health |
+| Night Light | switch | |
+| Standby | switch | |
+| Volume | number | Camera speaker volume, 0–100 |
+| Soundtrack | switch | Built-in sound playback on/off |
+| Soundtrack Selection | select | Options come from the camera's own catalog |
 
 Simply enable MQTT in your configuration and devices will appear automatically.
+Set `NANIT_MQTT_DISCOVERY=false` to publish state topics without announcing
+entities.
+
+The video feed is not announced via discovery; add the camera manually as
+described below.
+
+**Soundtrack control is not finished.** The protobuf field that selects a
+soundtrack is not part of the reverse-engineered schema, so the two soundtrack
+entities appear but do nothing until the field is identified against a real
+camera. [SOUNDTRACK_CAPTURE.md](SOUNDTRACK_CAPTURE.md) is the runbook for
+finding it; it is a single constant to fill in afterwards.
 
 ### Manual Camera Setup
 
