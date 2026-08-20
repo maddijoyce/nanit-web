@@ -129,10 +129,11 @@ cleared:
 mosquitto_pub -h YOUR_BROKER -t 'homeassistant/switch/nanit_OLD_UID/night_light/config' -r -n
 ```
 
-**Sound stops on its own after about ten seconds.** Known limitation. The Nanit
-app offers 30/60/infinite timers when starting a sound, so the camera expects a
-duration this project does not yet send, and falls back to a brief default.
-Starting the sound from the Nanit app instead plays it indefinitely. See
+**Sound stops on its own after about ten seconds.** Known limitation, most
+likely the length of the audio clip. The Nanit app offers 30min, 60min and loop
+per sound, so the camera appears to play a track once through unless told to
+repeat, and this project does not yet know how to ask for that. Starting the
+sound from the Nanit app instead plays it as configured. See
 [soundtrack-capture.md](soundtrack-capture.md).
 
 **A sound started from the Nanit app takes a while to show.** Expected: the
