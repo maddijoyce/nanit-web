@@ -46,7 +46,14 @@ func (conn *Connection) Run(manager *baby.StateManager, ctx utils.GracefulContex
 
 	opts := MQTT.NewClientOptions()
 	opts.AddBroker(conn.Opts.BrokerURL)
-	opts.SetClientID(conn.Opts.TopicPrefix)
+	// ClientID must be unique per broker connection. It was previously set from
+	// the topic prefix, which silently ignored NANIT_MQTT_CLIENT_ID and made two
+	// instances sharing a prefix fight over one client id.
+	clientID := conn.Opts.ClientID
+	if clientID == "" {
+		clientID = conn.Opts.TopicPrefix
+	}
+	opts.SetClientID(clientID)
 	opts.SetUsername(conn.Opts.Username)
 	opts.SetPassword(conn.Opts.Password)
 	opts.SetCleanSession(false)

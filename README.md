@@ -159,7 +159,8 @@ per camera:
 
 Simply enable MQTT in your configuration and devices will appear automatically.
 Set `NANIT_MQTT_DISCOVERY=false` to publish state topics without announcing
-entities.
+entities. See [docs/home-assistant.md](docs/home-assistant.md) for step-by-step
+setup and troubleshooting.
 
 The video feed is not announced via discovery; add the camera manually as
 described below.
