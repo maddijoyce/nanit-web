@@ -86,8 +86,6 @@ frontend/
 │   ├── lib/                # Utilities and API client
 │   └── types/              # TypeScript type definitions
 ├── public/                 # Static assets
-├── Dockerfile             # Frontend container config
-├── nginx.conf             # Nginx config for production
 └── package.json           # Dependencies and scripts
 ```
 
@@ -144,7 +142,8 @@ http.Handle("/", http.FileServer(http.Dir("frontend/dist")))
 
 ### Docker Production
 
-The included Dockerfile builds a production container with Nginx serving the static files.
+The repository root `Dockerfile` builds the frontend in its `frontend-build`
+stage and copies the static export into the Go backend image, which serves it.
 
 ## Next Steps
 
