@@ -132,6 +132,32 @@ func TestCapturedPlaybackDecodesToSoundtrack(t *testing.T) {
 	assert.Empty(t, client.DescribeUnknownFields(playback))
 }
 
+// The infinite-duration sentinel must survive a round trip. proto2 encodes a
+// negative int32 as a 10-byte varint (sign-extended to 64 bits), so -1 is not a
+// value the schema could stumble into by accident; the camera reads it back as
+// int32 -1, which is what the Nanit app sends to loop a track forever.
+func TestPlaybackDurationInfiniteRoundTrips(t *testing.T) {
+	encoded, err := proto.Marshal(&client.Playback{
+		Status:     client.Playback_STARTED.Enum(),
+		Duration:   proto.Int32(client.SoundtrackDurationInfinite),
+		Soundtrack: client.NewSoundtrackMessage("Wind.wav"),
+	})
+	require.NoError(t, err)
+
+	// Field 2 must be present as a varint carrying the two's-complement -1,
+	// sign-extended to 64 bits the way proto2 encodes a negative int32
+	infinite := client.SoundtrackDurationInfinite
+	var want []byte
+	want = protowire.AppendTag(want, 2, protowire.VarintType)
+	want = protowire.AppendVarint(want, uint64(int64(infinite)))
+	assert.Contains(t, string(encoded), string(want), "duration -1 should encode as a tag-2 varint")
+
+	decoded := &client.Playback{}
+	require.NoError(t, proto.Unmarshal(encoded, decoded))
+	assert.Equal(t, int32(-1), decoded.GetDuration())
+	assert.Empty(t, client.DescribeUnknownFields(decoded))
+}
+
 // Stopped carries only the status
 func TestCapturedStoppedPlayback(t *testing.T) {
 	playback := &client.Playback{}

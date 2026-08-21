@@ -13,8 +13,18 @@ import "google.golang.org/protobuf/proto"
 //     stopped it carries only the status.
 //   - PUT_PLAYBACK with status STARTED alone plays whatever the camera already
 //     had selected. The track is chosen by including the Soundtrack message.
+//   - Playback.duration (field 2) controls how long the camera keeps playing.
+//     Without it the camera plays the clip once and stops; -1 loops forever.
 //
 // See docs/soundtrack-capture.md for how this was established.
+
+// SoundtrackDurationInfinite - the Playback.duration value that makes the camera
+// loop a track forever instead of playing the clip once and stopping.
+//
+// Confirmed by decompiling the Nanit Android app: it converts the playback
+// duration to whole seconds, and encodes its "infinite" choice (a zero Duration)
+// as -1 on the wire. A positive value would play for that many seconds.
+const SoundtrackDurationInfinite int32 = -1
 
 // SoundtrackSelectionVerified - whether choosing a specific track is known to
 // work. Gates the Home Assistant select entity.
