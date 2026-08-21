@@ -372,11 +372,10 @@ func logInboundFrame(babyUID string, m *client.Message) {
 // each an optional type (0 on every built-in seen) and a filename. The filename
 // is the identifier — there is no numeric id.
 //
-// One thing is still unconfirmed: which Playback field names the track to play.
-// Stopping needs no name, and the camera does not broadcast track changes, so it
-// could not be read off the wire. client.SoundtrackNameFieldTag holds the current
-// hypothesis and is written as an unknown field, so other tags can be tried
-// without regenerating the schema. See docs/soundtrack-capture.md.
+// The full Playback schema was confirmed by decompiling the Nanit app: the track
+// is named by an embedded Soundtrack (field 3), and Playback.duration (field 2)
+// is the seconds to play, with -1 meaning loop forever. This bridge sends -1 on
+// every start so a sound keeps playing. See docs/soundtrack-capture.md.
 // ---------------------------------------------------------------------------
 
 // sendSoundCommand - starts the named soundtrack, or stops playback when given
@@ -407,10 +406,15 @@ func sendSoundCommand(babyUID string, name string, conn *client.WebsocketConnect
 
 	log.Info().Str("baby_uid", babyUID).Str("soundtrack", name).Msg("Starting soundtrack playback")
 
-	// The camera reports the track on both fields; mirror that when setting it.
+	// duration -1 tells the camera to loop the track forever. Without it the
+	// camera plays the clip once and stops, which is why a sound started from
+	// here used to cut out after one pass (~20-50s depending on the clip). The
+	// Nanit app sends the same -1 for its "infinite" option. The camera reports
+	// the track on both fields; mirror that when setting it.
 	conn.SendRequest(client.RequestType_PUT_PLAYBACK, &client.Request{
 		Playback: &client.Playback{
 			Status:             client.Playback_STARTED.Enum(),
+			Duration:           utils.ConstRefInt32(client.SoundtrackDurationInfinite),
 			Soundtrack:         client.NewSoundtrackMessage(name),
 			SelectedSoundtrack: client.NewSoundtrackMessage(name),
 		},

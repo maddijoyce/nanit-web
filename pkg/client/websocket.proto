@@ -195,9 +195,20 @@ message Playback {
 
   required Status status = 1;
 
-  // Both confirmed from GET_PLAYBACK replies while a track was playing. Each
-  // carried the same Soundtrack in every capture, so the distinction between
-  // them is unknown; when stopped, neither is present.
+  // duration - how long the camera should keep playing, in seconds. The Nanit
+  // app's per-track 30min / 60min / infinite choice lands here. A value of -1
+  // means play forever, which is how the app keeps a sound looping; a positive
+  // value plays for that many seconds; omitting it makes the camera play the
+  // clip once and stop. Confirmed by decompiling the Nanit Android app, which
+  // encodes an "infinite" selection (Duration.ZERO) as -1 on this field. See
+  // docs/soundtrack-capture.md.
+  optional int32 duration = 2;
+
+  // The Nanit app names the field 3 message `tracks` (repeated) and field 4
+  // `currentTrack`; a play command sets field 3 to a one-element list and
+  // leaves field 4 unset, while GET_PLAYBACK replies populate both. A single
+  // optional Soundtrack on field 3 is wire-compatible with a one-element
+  // repeated field, so these mappings interoperate with the camera unchanged.
   optional Soundtrack soundtrack = 3;
   optional Soundtrack selectedSoundtrack = 4;
 }
